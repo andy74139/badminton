@@ -1,0 +1,251 @@
+羽球輪替板｜技術規格文件 Specification
+版本：Draft 1.0
+依據：requirements.txt
+說明：本文件把需求轉成可實作的資料結構、打分、流程及測試規則。分數預設值是第一輪建議，應集中在 pairing.js 常數區，實際試打後可以調整。
+
+一、架構與檔案責任
+
+建議維持靜態網站，不引入後端、資料庫、框架或建置流程。
+
+- index.html：既有介面、事件掛接與 DOM render。只保留必要的 UI/狀態協調邏輯，不再內嵌長篇配隊演算法。
+- roster.js：預設名單、名單 CRUD、同組/雙人組規則、姓名正規化、人員設定檔、貼上名單解析、匯入預覽與套用。
+- pairing.js：候選資格、平均值與個人分數、性別/實力分數、四人組合列舉、三種分隊拆分評分、最佳候選及同分隨機選擇。
+- 儲存與版本遷移可暫留在現有主程式中，避免為這次小型靜態網站引入額外架構。若現有專案已有 app.js，則保留既有慣例。
+
+第一次重構可以修改 index.html 來載入兩個新檔案；重構完成後，更新預設名單或配隊演算法應能主要只動 roster.js 或 pairing.js。若專案需直接用 file:// 開啟，優先採用一般 script 載入和明確的 window 命名空間，避免 ES module 在 file:// 下的相容性問題；若專案一向透過本機伺服器/Netlify 執行，則可依既有架構採用模組方式。
+
+二、資料模型
+
+1. 本場狀態（沿用原 state 並擴充）
+
+state = {
+  schemaVersion: 3,
+  nextGroupId: number,
+  nextMemberId: number,
+  groups: [{ id, memberIds: [memberId, ...] }],
+  members: {
+    [memberId]: {
+      id: number,
+      name: string,
+      groupId: number,
+      playCount: number,             // 本場實際上場次數，只計真正確認開始的場次
+      onCourt: "A" | "B" | "C" | null,
+      gender: "M" | "F" | null,
+      skill: 1 | 2 | 3 | null,
+      resting: boolean,
+      lastFinishedAt: number | null, // Unix epoch milliseconds，由完賽按鈕記錄
+      restCreditTotal: number,       // 已結算的不打場數
+      restStartAverage: number | null // 目前這段臨時不打期間的平均實際上場次數基準
+    }
+  },
+  groupCounts: { [groupId]: number }, // 可供舊資料/舊畫面相容；不作為主要個人公平分數
+  courts: { A: [seat|null x4], B: [seat|null x4], C: [seat|null x4] },
+  pending: { A: boolean, B: boolean, C: boolean },
+  courtCount: 1 | 2 | 3,
+  started: boolean,
+  settings: {
+    restCompensationEnabled: boolean
+  },
+  profiles: {
+    [normalizedName]: { name: string, gender: "M"|"F"|null, skill: 1|2|3|null }
+  }
+}
+
+每個 seat 保留既有格式 { groupId, memberId }。同一 group 最多兩個 member。組別的成員共享一個輪替名額，一場/同一時間只能派該組一人。
+
+2. 次數定義
+
+- playCount：真正上場次數。建議名單 pending=true 不計次；使用者確認開打時，對該場實際四人各加 1。
+- restCreditTotal：以前已完成的臨時不打期間所累積的補償。
+- activeRestCredit(member, state)：目前仍在臨時不打期間，按目前平均實際上場次數已達到的補償。
+- effectivePlayCount = playCount + restCreditTotal + activeRestCredit（僅在補償開關開啟時；關閉時 = playCount，已取得補償仍保留於資料）。
+- avgActualPlayCount：本場目前名單中所有姓名非空白的人的 playCount 平均值。包含場上人員及臨時不打者；排除空白姓名及已從本場名單移除的人。若沒有有效人員，回傳 0。
+- avgEffectivePlayCount：目前名單中所有姓名非空白者的 effectivePlayCount 平均值。它用於個人公平性分數。
+- 不打場數的基準只根據 avgActualPlayCount 計算，禁止用 avgEffectivePlayCount，避免補償自身推升平均並反過來增加更多補償。
+
+3. 人員設定檔
+
+- normalizeName(name)：去除前後空白、將連續空白合併為一個空白、英文字母轉為小寫；可使用 Unicode NFKC 正規化。不要刪除姓名中的一般中文字元或中間必要符號。
+- profiles 保存曾經設定過的姓名、性別與實力，不隨本場名單刪除操作而刪除。
+- 讀取設定時先從目前 schema 讀取；若舊資料沒有 profiles，使用目前 members 的姓名、gender、skill 建立 profiles。
+- 同名重複時，不要自動將兩筆本場人員合併成同一個人。匯入預覽應提示並讓使用者決定。
+- 若使用者將新姓名手動映射至舊設定，將舊設定複製到新姓名的 profile；不把舊場次 playCount、lastFinishedAt 或 restCreditTotal 一併複製。
+
+三、貼上名單解析及匯入
+
+1. 每行代表一個輪替組別：
+   - "王小明" => 一組、一位成員。
+   - "王小明 / 陳小華" => 一組、兩位成員，共用一個輪替名額。
+2. 忽略空白行；切分雙人組後，對姓名 trim。空姓名、同一行超過兩位成員、全空白輸入、同名衝突均須在預覽中顯示錯誤或警告。
+3. 預覽的每位人員列顯示：本次姓名、是否匹配既有 profile、性別、實力、設定來源與可編輯的舊設定選擇器。新姓名預設為性別/實力未設定。
+4. 套用匯入前，由使用者選擇：
+   A. 開始新場次：新名單取代本場名單；每個人 playCount=0、restCreditTotal=0、lastFinishedAt=null、onCourt=null、resting=false；所有 courts 清空，pending 全 false，started=false；profiles 保留並套用設定。
+   B. 更新目前場次：以 profile 對應為主，對應到現有本場 member 的人保留 playCount 與補償歷史；新增人員從零開始；刪除不再出現的本場人員；清除失效的場上 seat；同一組兩人身份關係依匯入格式更新。若更改同組關係造成現有場地不合法，清空該場地相關建議並要求重新安排。
+5. 匯入採原子式套用：解析與預覽不變更正式 state；使用者按確認後一次更新並 save。取消不做任何修改。
+
+四、可用人選與候選列舉
+
+一位人員可成為候選人，需同時符合：
+- 姓名非空白。
+- resting !== true。
+- 該人所在的 group 沒有任何成員被另一個場地占用（包含 pending 建議名單）。同組兩人不能跨場同時候選。
+- 產生某場地下一組時，先釋出該場地原有四個 seat；不得先將其他場地的人釋出。
+
+產生四人候選時，必須符合四個人分屬四個不同的 group。雙人組若兩位都可用，兩位都應納入候選選擇，讓個人公平分數能決定這輪由誰代表該組上場；不可先固定只選組內場數最低者再忽略另一位的分數。針對四個不同 group 的組合，最多選出一位該 group 成員。
+
+在人數 15–20 的範圍內，可列舉全部可行的四人組合並計分。最壞的 20 位皆為不同單人組時，C(20,4)=4,845 組，每組最多檢查三種分隊拆分；此規模足夠小，不需要複雜最佳化套件。不可使用 windowGroups.slice(0, 12) 等方式只考慮名單前段。
+
+多場地同時建立建議名單時，依序處理場地即可；每次把選出的四人保留到該場地後，重新取得候選人，因此後面的場地不會重複使用前面場地的組別。
+
+五、分數計算
+
+以下常數集中在 pairing.js 頂部，例如：
+
+const SCORE = {
+  MUCH_BELOW_AVERAGE: 4,
+  BELOW_AVERAGE: 2,
+  ABOVE_AVERAGE: -2,
+  MUCH_ABOVE_AVERAGE: -4,
+  RECENT_FINISH_PENALTY: -3,
+  RECENT_FINISH_MS: 120_000,
+  ALL_FEMALE_BONUS: 2,
+  MIXED_DOUBLE_BONUS: 1,
+  SKILL_DIFF_0_OR_1: 0,
+  SKILL_DIFF_2: -2,
+  SKILL_DIFF_3_OR_MORE: -5,
+  REST_CREDIT_STEP: 0.5,
+  REST_CREDIT_PER_STEP: 0.5,
+  MIN_REST_AVERAGE_BASELINE: 1
+};
+
+1. 個人公平分數
+
+function individualScore(member, state, avgEffectivePlayCount, now) {
+  const count = effectivePlayCount(member, state);
+  let fairnessScore;
+  if (count < avgEffectivePlayCount - 1) {
+    fairnessScore = SCORE.MUCH_BELOW_AVERAGE;
+  } else if (count < avgEffectivePlayCount - 0.5) {
+    fairnessScore = SCORE.BELOW_AVERAGE;
+  } else if (count > avgEffectivePlayCount + 1) {
+    fairnessScore = SCORE.MUCH_ABOVE_AVERAGE;
+  } else if (count > avgEffectivePlayCount + 0.5) {
+    fairnessScore = SCORE.ABOVE_AVERAGE;
+  } else {
+    fairnessScore = 0;
+  }
+
+  const recentlyFinished = member.lastFinishedAt != null
+    && now - member.lastFinishedAt >= 0
+    && now - member.lastFinishedAt < SCORE.RECENT_FINISH_MS;
+  return fairnessScore + (recentlyFinished ? SCORE.RECENT_FINISH_PENALTY : 0);
+}
+
+分數區間嚴格依上述順序判斷。邊界行為：count == average-1 只能取得 +2；count == average-0.5 得 0；count == average+0.5 得 0；count == average+1 取得 -2。
+
+2. 不打場數
+
+function activeRestCredit(member, avgActualPlayCount, enabled) {
+  if (!enabled || !member.resting || member.restStartAverage == null) return 0;
+  const baseline = Math.max(member.restStartAverage, SCORE.MIN_REST_AVERAGE_BASELINE);
+  const growth = Math.max(0, avgActualPlayCount - baseline);
+  const steps = Math.floor((growth + 1e-9) / SCORE.REST_CREDIT_STEP);
+  return steps * SCORE.REST_CREDIT_PER_STEP;
+}
+
+function effectivePlayCount(member, state) {
+  return member.playCount + member.restCreditTotal
+    + activeRestCredit(member, avgActualPlayCount(state), state.settings.restCompensationEnabled);
+}
+
+進入臨時不打時，記錄 restStartAverage = max(avgActualPlayCount(state), 1)。恢復時先用當前 avgActualPlayCount 結算 activeRestCredit，再加到 restCreditTotal，最後把 restStartAverage 設為 null。再次進入臨時不打時建立新的基準。
+
+開關關閉時，先把目前已經達到的補償結算到 restCreditTotal，接著將仍在休息者的 restStartAverage 設為 null。重新開啟時，為仍在休息者建立新基準 max(avgActualPlayCount(state),1)，不追溯關閉期間。
+
+3. 配隊分數
+
+對四位候選人，考慮以下三種分隊：
+- [0,1] vs [2,3]
+- [0,2] vs [1,3]
+- [0,3] vs [1,2]
+
+每種分隊分別計分：
+
+A. 性別加分
+- 四人 gender 全為 F：+2。對任何分隊方式都成立。
+- 否則，四人性別全部已知，且剛好 2M+2F，並且該分隊的兩隊各自均為 1M+1F：+1。
+- 其他狀況或性別資料不完整：0。
+
+B. 實力差距扣分
+- 只有四人 skill 都屬於 1、2、3 時才計算。
+- teamA = skill[a1]+skill[a2]；teamB = skill[b1]+skill[b2]；diff = abs(teamA-teamB)。
+- diff <= 1：0；diff == 2：-2；diff >= 3：-5。
+- 任何人 skill 未設定或無效，skill penalty = 0。
+
+配隊分數 = 性別加分 + 實力差距扣分。
+
+每一個四人候選組合，先計算四個人的個人分數總和，再對三種分隊分別加上配隊分數。留下總分最高的那個分隊；同一組合有多種同分最佳拆分時可隨機挑選其中一種。
+
+4. 四人候選總分與選擇
+
+lineupScore = sum(individualScore(person_i)) + pairingScore(bestSplit)
+
+枚舉全部合法四人候選組合，保留最高分組合。若多個四人組合分數相同，從同分組合中隨機選一組。不要以性別 tier 做先後排序，也不要因為性別組合是理想型就跳過總分比較。
+
+選定組合後，將四位球友分配為最佳拆分的兩隊。座位順序固定為 teamA 的兩位後接 teamB 的兩位，以配合現有 UI 將座位 1、2 和 3、4 顯示為對戰兩隊。
+
+若沒有四個可用且不同的輪替組別，填入能找到的合法人選及空位並顯示提示，不要重複同組或同一人湊數。
+
+六、完賽、確認與計數事件
+
+- startAll / proposeCourt：建立待確認名單，設定 pending=true；不可增加 playCount 或 restCreditTotal。
+- confirmCourt：把目前四個實際確認的成員 playCount 各加 1，更新原有組別計數（如仍保留），設定 pending=false。所有統計都應保存在 state 並立即 save。
+- 完賽：只有 pending=false 時才是完賽事件。先取得該場當下的四位座位成員，把每人的 lastFinishedAt 設為 Date.now()；再釋放該場 seat 並產生下一組建議。產生新建議時，剛完成者的 -3 分會即時生效。
+- 若 pending=true，按鈕仍是「確認，開始打」，不是完賽，不得寫 lastFinishedAt。
+- 使用者在進行中換掉單一位置時，遵循現有程式對實際入場者計數的語意；離場時間的主要定義仍以「完賽，換下一組」按鈕事件為準。需加註解說明這個規則。
+- 重置次數：playCount 歸零、restCreditTotal 歸零、lastFinishedAt 清空、onCourt 歸零、courts 清空、pending=false、started=false；保留名單、profiles、gender、skill、場地數及補償開關。仍處於 resting 的人重新設定 restStartAverage=1。
+
+七、手動換人候選推薦
+
+- 手動換一個座位時，固定另外三個座位不變；對每個合法替換候選人，使用同一份 individualScore 和 pairingScore 規則計算候選總分。
+- 排序由總分高到低；同分時以姓名排序或同分內隨機擇一，選擇一種固定且可理解的行為並寫測試。
+- 不可推薦目前在其他場地、同組成員已占用另一場地、臨時不打、姓名空白或替換後會造成同組重複的人員。
+- 候選 UI 可顯示實際上場次數、有效場數，以及「場數較少」「剛下場」「性別組合加分」「實力差距扣分」等簡短推薦原因。推薦原因是輔助資訊，不能與實際評分使用不同算法。
+
+八、統計和本機儲存
+
+- 統計至少逐人顯示：姓名、實際上場次數、有效場數；若有不打場數，額外顯示不打場數數，避免讓使用者誤以為補償等於真正上場。
+- 舊 groupCounts 可保留以支援既有顯示/資料遷移，但不能拿來取代新演算法中的個人有效場數。
+- 新儲存格式可改用 badminton_rotation_v3。載入順序為 v3；若不存在則遷移 v2；若不存在再遷移 v1；最後才建立預設 state。
+- v2/v1 遷移必須盡量保留目前名單、場地、場上狀態、playCount、groupCounts、性別與實力。遷移後建立 profiles。成功儲存 v3 前，不要刪除舊 key。
+- localStorage 寫入失敗時不可無聲假裝成功。至少在 UI 顯示「儲存失敗，資料可能無法在重整後保留」的錯誤提示；不要清空舊資料作為處理方式。
+
+九、建議測試案例
+
+1. 個人分數邊界：令平均有效場數=3，分別測試 count=1.9、2、2.49、2.5、3.5、3.6、4、4.01，結果依序應對應 +4、+2、+2、0、0、-2、-2、-4（注意此表以差值直接驗證：2 與平均差 1，按規則為 +2；4 與平均差 1，按規則為 -2）。另外測試低於平均 1 以上與高於平均 1 以上的邊界。
+2. 最近下場：lastFinishedAt 為 now-119999ms 時扣 -3；now-120000ms 時不扣。
+3. 性別加分：FFFF 任意拆分 +2；2M2F 的混合分隊 +1；2M2F 但同隊皆同性別不加混雙分；有未知性別不加性別分。
+4. 實力分數：diff=0/1 得 0；diff=2 得 -2；diff=3/4 得 -5；任一 skill 未設定時實力扣分為 0。
+5. 不打場數：基準平均 1.0，在平均 1.49、1.5、1.99、2.0 時目前期間補償依序 0、0.5、0.5、1.0。測試基準平均 0.6 時仍以 1.0 為基準。
+6. 不打場數無回饋：增加 restCreditTotal 不會改變 avgActualPlayCount，亦不會因此額外觸發另一個補償門檻。
+7. 同組限制：一個雙人組的兩人不得同時出現在同一 lineup 或不同 courts；候選列舉時兩位可分別競爭該組名額。
+8. 全候選搜尋：建立超過 12 組的名單，確認最後一組的球友也會被候選評分，不能因名單順序被忽略。
+9. 確認/完賽：pending lineup 不增加 playCount；確認時四人各加 1；完賽時這四人記錄相同或近似的時間戳；下一組能套用近期下場扣分。
+10. 匯入：單人、雙人組、空白行、不同空白、重複姓名、舊設定自動匹配、手動指定舊設定、取消匯入及兩種匯入模式皆需測試。
+11. 遷移：以目前 v2 資料測試首次啟動新版後名單、性別、實力、場上位置和既有次數保留；profiles 被正確建立。
+
+十、實作約束
+
+- 先閱讀並理解目前 index.html/JavaScript，不要重寫整個 UI 或移除既有功能。
+- 新的評分規則以純函數實作，盡量讓 pairing.js 不直接操作 DOM 或 localStorage，方便測試。
+- roster.js 負責解析/管理名單和設定檔，不應自行複製一套配隊分數邏輯。
+- 加入必要的繁體中文註解；變動盡量小而明確。
+- 完成後提供修改檔案列表、主要算法說明、資料遷移說明及測試結果；如無法自動測試，提供具體手動驗收步驟，不可宣稱未實際執行的測試已通過。
+
+十一、新增輪替操作測試/實作備註
+- 再換另一批： rejected persons 使用 SCORE.REJECTED_PERSON_PENALTY=-100（集中在 pairing.js），成功確認後清除暫時扣分。
+- 系統換人：在 seat picker 最上方提供自動選擇 scoredManualCandidates 第一名。
+- 統計區塊預設展開且不可折疊；詳細統計顯示實際上場、已結算補償、目前休息期間補償、有效場數。
+- 補償開關文案如 requirements 新增需求。
+
+- 2026 更新：計算實際平均與有效平均時，不納入標記為「臨時不打」且姓名非空白的人員。

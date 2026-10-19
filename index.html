@@ -1,0 +1,2126 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>羽球輪替板</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink:#172420;
+    --muted:#5B6B62;
+    --faint:#8A968E;
+    --paper:#F1F4EE;
+    --surface:#FFFFFF;
+    --surface-2:#EAEEE5;
+    --surface-3:#DEE5D8;
+    --line:#DBE2D5;
+    --accent:#1E6E57;
+    --accent-strong:#12503E;
+    --accent-soft:#DCEDE6;
+    --accent-ink:#EAF6F1;
+    --court-a:#2F5DA6;
+    --court-a-ink:#EAF1FC;
+    --court-b:#1E6E57;
+    --court-b-ink:#EAF6F1;
+    --court-c:#B25B24;
+    --court-c-ink:#FBEFE5;
+    --shuttle:#B8901E;
+    --danger:#B34747;
+    --danger-ink:#FCEDEC;
+    --rose:#BE5686;
+    --rose-ink:#FDEEF5;
+    --shadow: 0 1px 2px rgba(23,36,32,0.06), 0 10px 24px -14px rgba(23,36,32,0.22);
+    --shadow-lg: 0 4px 10px rgba(23,36,32,0.08), 0 24px 48px -20px rgba(23,36,32,0.28);
+    --radius: 18px;
+    --radius-sm: 12px;
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#E9F1EC; --muted:#A9B8AE; --faint:#748078;
+      --paper:#0D1310; --surface:#161F1A; --surface-2:#1D2820; --surface-3:#26332B;
+      --line:#2A362F;
+      --accent:#4FBE98; --accent-strong:#6ED4AE; --accent-soft:#1B3A2F; --accent-ink:#0B241C;
+      --court-a:#7FA6E8; --court-a-ink:#0C1C33;
+      --court-b:#4FBE98; --court-b-ink:#0B241C;
+      --court-c:#E2985A; --court-c-ink:#331C0B;
+      --shuttle:#E4C158;
+      --danger:#D97A7A; --danger-ink:#2B0E0E;
+      --rose:#E38FB4; --rose-ink:#34101F;
+      --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 10px 24px -14px rgba(0,0,0,0.6);
+      --shadow-lg: 0 4px 10px rgba(0,0,0,0.35), 0 30px 56px -20px rgba(0,0,0,0.65);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#E9F1EC; --muted:#A9B8AE; --faint:#748078;
+    --paper:#0D1310; --surface:#161F1A; --surface-2:#1D2820; --surface-3:#26332B;
+    --line:#2A362F;
+    --accent:#4FBE98; --accent-strong:#6ED4AE; --accent-soft:#1B3A2F; --accent-ink:#0B241C;
+    --court-a:#7FA6E8; --court-a-ink:#0C1C33;
+    --court-b:#4FBE98; --court-b-ink:#0B241C;
+    --court-c:#E2985A; --court-c-ink:#331C0B;
+    --shuttle:#E4C158;
+    --danger:#D97A7A; --danger-ink:#2B0E0E;
+    --rose:#E38FB4; --rose-ink:#34101F;
+    --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 10px 24px -14px rgba(0,0,0,0.6);
+    --shadow-lg: 0 4px 10px rgba(0,0,0,0.35), 0 30px 56px -20px rgba(0,0,0,0.65);
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  button, input{ font-family:inherit; }
+  :focus-visible{ outline: 2.5px solid var(--accent); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: no-preference){
+    .seat, .btn, .bench-chip, .roster-overlay, .reset-modal-backdrop, .status-dot{
+      transition: transform .16s ease, background-color .16s ease, box-shadow .16s ease, border-color .16s ease, opacity .16s ease;
+    }
+    .seat.pop{ animation: seatPop .32s cubic-bezier(.2,.8,.3,1); }
+  }
+  @keyframes seatPop{
+    0%{ transform: scale(.92); opacity:.4; }
+    100%{ transform: scale(1); opacity:1; }
+  }
+
+  .wrap{ max-width: 900px; margin: 0 auto; padding: 18px 16px 56px; }
+
+  header.top{
+    position:relative;
+    padding: 10px 4px 22px;
+    margin-bottom: 4px;
+  }
+  header.top .row{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand svg{ flex:none; }
+  header.top h1{
+    font-size: 21px;
+    font-weight:900;
+    letter-spacing: 0.01em;
+    margin:0;
+    line-height:1.2;
+  }
+  header.top p{ margin:3px 0 0; font-size:12.5px; color:var(--muted); }
+  .top-actions{ display:flex; gap:8px; flex:none; }
+  .icon-btn{
+    appearance:none;
+    border:1px solid var(--line);
+    background:var(--surface);
+    color:var(--muted);
+    font-size:12px;
+    font-weight:700;
+    border-radius:999px;
+    padding:9px 14px;
+    cursor:pointer;
+    white-space:nowrap;
+    box-shadow: var(--shadow);
+  }
+  .icon-btn:active{ transform: scale(0.96); }
+  .icon-btn.primary-ghost{ color:var(--accent-strong); border-color:var(--accent-soft); background:var(--accent-soft); }
+
+  .court-count-row{
+    display:flex; align-items:center; gap:10px; margin-top:14px;
+  }
+  .court-count-label{ font-size:12px; color:var(--muted); font-weight:700; flex:none; }
+  .court-count-seg{ flex:1; }
+  .count-btn{
+    flex:1; border:1px solid var(--line); background:var(--surface); color:var(--muted);
+    font-size:13px; font-weight:700; padding:9px 0; border-radius:10px; cursor:pointer;
+  }
+  .count-btn:active{ transform: scale(0.96); }
+  .count-btn.on{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: var(--shadow); }
+
+  .court-lines{
+    position:absolute;
+    left:0; right:0; bottom:0;
+    height:10px;
+    background-image: repeating-linear-gradient(90deg, var(--line) 0 10px, transparent 10px 22px);
+    opacity:.7;
+    border-radius:2px;
+  }
+
+  .start-banner{
+    background:var(--surface);
+    border:1px dashed var(--line);
+    border-radius: var(--radius);
+    padding:26px 20px;
+    text-align:center;
+    margin-bottom:18px;
+    box-shadow: var(--shadow);
+  }
+  .start-banner .roster-summary{
+    font-family:"JetBrains Mono",monospace;
+    font-size:12px;
+    color:var(--faint);
+    letter-spacing:.02em;
+    margin-bottom:10px;
+  }
+  .start-banner p{ margin:0 0 18px; color:var(--muted); font-size:14px; line-height:1.65; max-width:34em; margin-left:auto; margin-right:auto; }
+
+  .btn{
+    appearance:none; border:none; cursor:pointer;
+    border-radius:14px; font-weight:700; letter-spacing:0.02em;
+  }
+  .btn-primary{
+    background:var(--accent); color:var(--accent-ink);
+    padding:15px 24px; font-size:15px; box-shadow: var(--shadow-lg);
+  }
+  .btn-primary:active{ background:var(--accent-strong); transform: scale(0.98); }
+  .btn-outline{
+    background:var(--surface-2); color:var(--ink); border:1px solid var(--line);
+    padding:11px 16px; font-size:13.5px;
+  }
+  .btn-outline:active{ transform: scale(0.97); background:var(--surface-3); }
+
+  .courts{ display:grid; grid-template-columns: 1fr; gap:16px; }
+  @media (min-width: 720px){
+    .courts.count-1{ grid-template-columns: minmax(0,420px); justify-content:center; }
+    .courts.count-2{ grid-template-columns: repeat(2, 1fr); }
+    .courts.count-3{ grid-template-columns: repeat(3, 1fr); }
+  }
+
+  .court{
+    position:relative;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding:16px 16px 14px;
+    overflow:hidden;
+  }
+  .court::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:6px; background:var(--c-hue); }
+  .court.A{ --c-hue: var(--court-a); }
+  .court.B{ --c-hue: var(--court-b); }
+  .court.C{ --c-hue: var(--court-c); }
+
+  .court-head{ display:flex; align-items:center; gap:11px; margin-bottom:14px; }
+  .court-badge{
+    font-family:"JetBrains Mono",monospace; font-weight:700; font-size:15px;
+    width:36px;height:36px; border-radius:11px;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--c-hue);
+    box-shadow: 0 4px 10px -4px var(--c-hue);
+  }
+  .court.A .court-badge{ color: var(--court-a-ink); }
+  .court.B .court-badge{ color: var(--court-b-ink); }
+  .court.C .court-badge{ color: var(--court-c-ink); }
+
+  .court-title{ font-size:15px; font-weight:700; }
+  .court-sub-row{ display:flex; align-items:center; gap:6px; margin-top:2px; }
+  .status-dot{ width:7px; height:7px; border-radius:50%; background:var(--faint); flex:none; }
+  .status-dot.active{ background:var(--c-hue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-hue) 25%, transparent); }
+  .court-sub{ font-size:11px; color:var(--faint); font-family:"JetBrains Mono",monospace; }
+  .match-badge{
+    font-size:10px; padding:2px 8px; border-radius:999px; background:var(--accent-soft);
+    color:var(--accent-strong); font-weight:700; margin-left:2px; white-space:nowrap;
+  }
+
+  .seats{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:8px; }
+  .vs-row{
+    grid-column: 1 / -1; display:flex; align-items:center; gap:8px; margin: 2px 0;
+    color:var(--faint); font-family:"JetBrains Mono",monospace; font-size:10px; letter-spacing:0.14em;
+  }
+  .vs-row::before, .vs-row::after{ content:""; flex:1; height:1px; background:var(--line); }
+
+  .seat{
+    position:relative;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:12px;
+    padding:12px 10px; min-height:58px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; gap:3px;
+    min-width:0;
+  }
+  .seat-swap{
+    position:absolute; top:6px; right:6px; width:24px; height:24px;
+    border-radius:50%; border:1px solid var(--line); background:var(--surface);
+    color:var(--faint); display:flex; align-items:center; justify-content:center;
+    padding:0; cursor:pointer;
+  }
+  .seat-swap:active{ transform: scale(0.88); background:var(--surface-3); }
+  .seat .name{ font-size:15px; font-weight:700; line-height:1.25; word-break:break-word; }
+  .seat .paired-tag{
+    display:flex; align-items:center; gap:3px;
+    font-size:10px; color:var(--faint); font-family:"JetBrains Mono",monospace;
+  }
+  .seat .paired-tag svg{ flex:none; opacity:.8; }
+  .seat.empty{ color:var(--faint); font-size:12px; border-style:dashed; }
+
+  .seat-tags{ display:flex; gap:4px; flex-wrap:wrap; justify-content:center; margin-top:1px; }
+  .tag-chip{ font-size:9.5px; padding:2px 6px; border-radius:6px; font-weight:700; letter-spacing:.01em; line-height:1.4; }
+  .tag-chip.gender-m{ background: color-mix(in srgb, var(--court-a) 16%, var(--surface-2)); color:var(--court-a); }
+  .tag-chip.gender-f{ background: color-mix(in srgb, var(--rose) 18%, var(--surface-2)); color:var(--rose); }
+  .tag-chip.skill{ background:var(--surface-3); color:var(--muted); font-weight:500; }
+
+  .court-next{
+    width:100%; margin-top:10px; padding:13px; font-size:14.5px;
+    background:var(--c-hue);
+    display:flex; align-items:center; justify-content:center; gap:7px;
+  }
+  .court.A .court-next{ color: var(--court-a-ink); }
+  .court.B .court-next{ color: var(--court-b-ink); }
+  .court.C .court-next{ color: var(--court-c-ink); }
+  .court-next:active{ transform: scale(0.98); filter:brightness(0.94); }
+  .court-next:disabled{ opacity:.45; filter:grayscale(.3); cursor:not-allowed; }
+  .court-next:disabled:active{ transform:none; filter:grayscale(.3); }
+  .court-next.confirm-mode{ background:var(--accent); }
+  .court.A .court-next.confirm-mode, .court.B .court-next.confirm-mode, .court.C .court-next.confirm-mode{ color:var(--accent-ink); }
+  .pending-note{
+    grid-column: 1 / -1;
+    font-size:11.5px; color:var(--muted); background:var(--accent-soft); border-radius:9px;
+    padding:8px 10px; margin-bottom:2px; line-height:1.55;
+  }
+
+  .seat-picker{
+    background:var(--surface); border:1.5px solid var(--accent); border-radius:12px;
+    padding:8px; min-height:58px; min-width:0;
+    box-shadow: var(--shadow);
+  }
+  .seat-picker-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .seat-picker-title{ font-size:10px; font-weight:700; color:var(--accent-strong); letter-spacing:.04em; }
+  .seat-picker-close{
+    flex:none; width:20px; height:20px; border-radius:6px; border:1px solid var(--line);
+    background:var(--surface-2); color:var(--faint); font-size:12px; line-height:1; cursor:pointer; padding:0;
+  }
+  .seat-picker-close:active{ transform: scale(0.9); }
+  .seat-picker-list{ display:flex; flex-direction:column; gap:4px; max-height:172px; overflow-y:auto; }
+  .picker-option{
+    appearance:none; display:flex; flex-direction:column; gap:2px; width:100%;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:8px;
+    padding:6px 8px; cursor:pointer; text-align:left; font-family:inherit; color:var(--ink);
+  }
+  .picker-option:active{ transform: scale(0.97); background:var(--surface-3); }
+  .picker-option.is-current{ border-color:var(--accent); background:var(--accent-soft); }
+  .po-top{ display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+  .po-name{ font-size:12.5px; font-weight:700; }
+  .po-bottom{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .po-count{ font-family:"JetBrains Mono",monospace; font-size:9.5px; color:var(--faint); }
+  .po-cur, .po-star{ font-size:9px; font-weight:700; color:var(--accent-strong); white-space:nowrap; }
+  .tag-chip.sm{ padding:1px 5px; font-size:8px; }
+
+  section.bench{
+    margin-top:22px; background:var(--surface); border:1px solid var(--line);
+    border-radius: var(--radius); padding:14px 16px 16px; box-shadow: var(--shadow);
+  }
+  .bench-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .bench-head h2{ font-size:12.5px; margin:0; color:var(--muted); font-weight:700; letter-spacing:0.06em; text-transform:uppercase; }
+  .bench-count{ font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--faint); }
+  .bench-list{ display:flex; flex-wrap:wrap; gap:8px; }
+  .bench-chip{
+    display:flex; align-items:center; gap:7px;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:999px;
+    padding:7px 8px 7px 12px; font-size:13px; font-weight:500; color:var(--ink);
+  }
+  .bench-empty{ font-size:13px; color:var(--faint); }
+  .rest-btn{
+    flex:none; border:none; background:var(--surface-3); color:var(--muted);
+    font-size:10.5px; font-weight:700; border-radius:999px; padding:5px 9px; cursor:pointer;
+  }
+  .rest-btn:active{ transform: scale(0.92); }
+
+  .resting-block{ margin-top:14px; padding-top:12px; border-top:1px dashed var(--line); }
+  .resting-head{
+    display:flex; align-items:center; gap:6px; margin-bottom:8px;
+    font-size:11px; color:var(--faint); font-weight:700; letter-spacing:0.04em; text-transform:uppercase;
+  }
+  .resting-list{ display:flex; flex-wrap:wrap; gap:8px; }
+  .resting-chip{
+    display:flex; align-items:center; gap:7px;
+    background:var(--surface); border:1px dashed var(--line); border-radius:999px;
+    padding:6px 6px 6px 12px; font-size:13px; color:var(--faint); text-decoration:line-through;
+  }
+  .resume-btn{
+    flex:none; border:none; background:var(--accent-soft); color:var(--accent-strong);
+    font-size:10.5px; font-weight:700; text-decoration:none; border-radius:999px; padding:5px 10px; cursor:pointer;
+  }
+  .resume-btn:active{ transform: scale(0.92); }
+
+  details.stats{ margin-top:14px; background:var(--surface); border:1px solid var(--line); border-radius: var(--radius); padding:2px 16px; box-shadow: var(--shadow); }
+  details.stats summary{
+    cursor:pointer; list-style:none; padding:14px 0; font-size:12.5px; font-weight:700; color:var(--muted);
+    letter-spacing:0.06em; text-transform:uppercase; display:flex; align-items:center; justify-content:space-between;
+  }
+  details.stats summary::-webkit-details-marker{ display:none; }
+  details.stats summary .chev{ font-family:"JetBrains Mono",monospace; color:var(--faint); transition: transform .16s ease; text-transform:none; }
+  details.stats[open] summary .chev{ transform: rotate(90deg); }
+
+  .stat-row{ display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line); }
+  .stat-row .stat-name{ flex:0 0 34%; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stat-row .stat-bar-track{ flex:1; height:8px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
+  .stat-row .stat-bar-fill{ height:100%; background:var(--accent); border-radius:999px; }
+  .stat-row .stat-num{ flex:0 0 26px; text-align:right; font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--muted); font-variant-numeric: tabular-nums; }
+  .stats-foot{ padding:12px 0 14px; font-size:11.5px; color:var(--faint); line-height:1.6; border-top:1px solid var(--line); }
+
+  footer.app-foot{ text-align:center; margin-top:22px; font-size:11px; color:var(--faint); }
+
+  /* ---- modal / overlay shared ---- */
+  .overlay-backdrop{
+    position:fixed; inset:0; background:rgba(10,14,12,0.5);
+    display:flex; align-items:center; justify-content:center; padding:0;
+    z-index:50;
+  }
+  .reset-modal{
+    background:var(--surface); border-radius:16px; padding:20px; max-width:320px; width:100%;
+    box-shadow: var(--shadow-lg); border:1px solid var(--line); margin:20px;
+  }
+  .reset-modal h3{ margin:0 0 8px; font-size:15px; }
+  .reset-modal p{ margin:0 0 16px; font-size:13px; color:var(--muted); line-height:1.6; }
+  .reset-modal .row{ display:flex; gap:10px; }
+  .reset-modal .row button{ flex:1; padding:11px; font-size:13.5px; border-radius:10px; }
+  .btn-ghost{ background:var(--surface-2); color:var(--ink); border:1px solid var(--line); }
+  .btn-danger{ background:var(--danger); color:var(--danger-ink); }
+  [hidden]{ display:none !important; }
+  #importOverlay{ z-index: 70; }
+
+  /* ---- roster sheet ---- */
+  .roster-overlay{ align-items:flex-end; }
+  @media (min-width: 640px){ .roster-overlay{ align-items:center; } }
+  .roster-sheet{
+    background:var(--surface); width:100%; max-width:560px;
+    border-radius: 20px 20px 0 0; box-shadow: var(--shadow-lg);
+    max-height: 88vh; display:flex; flex-direction:column; overflow:hidden;
+  }
+  @media (min-width: 640px){ .roster-sheet{ border-radius:20px; margin:20px; max-height:80vh; } }
+  .roster-grabber{ width:36px; height:4px; border-radius:999px; background:var(--line); margin:10px auto 0; flex:none; }
+  @media (min-width: 640px){ .roster-grabber{ display:none; } }
+  .roster-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 18px 4px; flex:none; }
+  .roster-head h2{ margin:0; font-size:16px; font-weight:900; }
+  .roster-summary-inline{ font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--faint); }
+  .roster-hint{ margin:6px 18px 4px; font-size:12px; color:var(--muted); line-height:1.55; background:var(--accent-soft); padding:10px 12px; border-radius:10px; }
+  .roster-list{ overflow-y:auto; padding:10px 18px 6px; flex:1; }
+  .roster-row{
+    display:flex; align-items:flex-start; gap:8px;
+    padding:10px 0; border-top:1px solid var(--line);
+  }
+  .roster-row:first-child{ border-top:none; }
+  .roster-fields{ flex:1; display:flex; flex-direction:column; gap:6px; min-width:0; }
+  .roster-field{ display:flex; align-items:center; gap:6px; }
+  .roster-field input{
+    flex:1; min-width:0; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);
+    border-radius:9px; padding:8px 10px; font-size:14px;
+  }
+  .roster-field input::placeholder{ color:var(--faint); }
+  .mini-x{
+    flex:none; width:26px; height:26px; border-radius:8px; border:1px solid var(--line);
+    background:var(--surface); color:var(--faint); font-size:14px; line-height:1; cursor:pointer;
+  }
+  .mini-x:active{ transform: scale(0.92); }
+  .roster-meta{ display:flex; gap:6px; flex-wrap:wrap; padding-left:2px; }
+  .seg{ display:flex; gap:3px; }
+  .seg-btn{
+    border:1px solid var(--line); background:var(--surface-2); color:var(--muted);
+    font-size:10.5px; font-weight:700; padding:4px 8px; border-radius:7px; cursor:pointer;
+  }
+  .seg-btn:active{ transform: scale(0.93); }
+  .seg-btn.on-m{ background:var(--court-a); color:var(--court-a-ink); border-color:var(--court-a); }
+  .seg-btn.on-f{ background:var(--rose); color:var(--rose-ink); border-color:var(--rose); }
+  .seg-btn.on-skill{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .seg-btn.on-rest{ background:var(--surface-3); color:var(--muted); border-color:var(--muted); text-decoration:line-through; }
+  .rest-toggle-wrap{ margin-left:auto; }
+  .add-partner-btn{
+    align-self:flex-start; background:none; border:1px dashed var(--line); color:var(--muted);
+    border-radius:8px; padding:6px 10px; font-size:11.5px; cursor:pointer;
+  }
+  .add-partner-btn:active{ transform: scale(0.96); }
+  .roster-row-trailing{ flex:none; display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+  .roster-count{ font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--faint); }
+  .trash-btn{
+    flex:none; border:1px solid var(--line); background:var(--surface); color:var(--faint);
+    border-radius:9px; padding:7px 10px; font-size:11.5px; cursor:pointer; font-weight:700;
+  }
+  .trash-btn.confirming{ background:var(--danger); border-color:var(--danger); color:var(--danger-ink); }
+  .trash-btn:active{ transform: scale(0.95); }
+
+  .roster-add{ display:flex; gap:10px; padding:14px 18px 4px; flex:none; }
+  .roster-add .btn{ flex:1; }
+  .roster-foot{ padding:12px 18px 18px; flex:none; display:flex; justify-content:center; }
+  .roster-foot button{ background:none; border:none; color:var(--faint); font-size:11.5px; text-decoration:underline; cursor:pointer; padding:6px; }
+  details > summary{ list-style:none; }
+  details > summary::-webkit-details-marker{ display:none; }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <div class="row">
+      <div class="brand">
+        <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="15" stroke="currentColor" stroke-opacity=".18" stroke-width="2"/>
+          <path d="M16 3 L16 29 M3 16 L29 16" stroke="currentColor" stroke-opacity=".18" stroke-width="1.4"/>
+          <circle cx="16" cy="16" r="6.5" fill="var(--accent)"/>
+        </svg>
+        <div>
+          <h1>羽球輪替板</h1>
+          <p id="subline">3 場地・機率均等輪替</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn primary-ghost" id="rosterBtn" type="button">管理名單</button>
+        <button class="icon-btn" id="resetBtn" type="button">重置次數</button>
+      </div>
+    </div>
+    <div class="court-count-row">
+      <span class="court-count-label">開放場地</span>
+      <div class="seg court-count-seg" id="courtCountSeg">
+        <button type="button" class="count-btn" data-count="1">1 場</button>
+        <button type="button" class="count-btn" data-count="2">2 場</button>
+        <button type="button" class="count-btn" data-count="3">3 場</button>
+      </div>
+    </div>
+    <div class="court-lines" aria-hidden="true"></div>
+  </header>
+
+  <div class="start-banner" id="startBanner">
+    <div class="roster-summary" id="startSummary">16 組・20 人</div>
+    <p id="startBannerText">按下開始，系統會公平隨機安排 A／B／C 三場，每場 4 人。之後每場打完，各自按「換下一組」即可。人數不對也可以先按「管理名單」增減。</p>
+    <button class="btn btn-primary" id="startBtn" type="button">開始安排上場</button>
+  </div>
+
+  <main class="courts" id="courts" hidden>
+    <div class="court A" id="court-A">
+      <div class="court-head">
+        <div class="court-badge">A</div>
+        <div>
+          <div class="court-title">A 場</div>
+          <div class="court-sub-row"><span class="status-dot" id="dot-A"></span><span class="court-sub" id="sub-A">—</span><span class="match-badge" id="badge-A" hidden></span></div>
+        </div>
+      </div>
+      <div class="seats" id="seats-A"></div>
+      <button class="btn court-next" data-court="A" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M15 4v4h-4M9 20v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        完賽，換下一組
+      </button>
+    </div>
+
+    <div class="court B" id="court-B">
+      <div class="court-head">
+        <div class="court-badge">B</div>
+        <div>
+          <div class="court-title">B 場</div>
+          <div class="court-sub-row"><span class="status-dot" id="dot-B"></span><span class="court-sub" id="sub-B">—</span><span class="match-badge" id="badge-B" hidden></span></div>
+        </div>
+      </div>
+      <div class="seats" id="seats-B"></div>
+      <button class="btn court-next" data-court="B" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M15 4v4h-4M9 20v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        完賽，換下一組
+      </button>
+    </div>
+
+    <div class="court C" id="court-C">
+      <div class="court-head">
+        <div class="court-badge">C</div>
+        <div>
+          <div class="court-title">C 場</div>
+          <div class="court-sub-row"><span class="status-dot" id="dot-C"></span><span class="court-sub" id="sub-C">—</span><span class="match-badge" id="badge-C" hidden></span></div>
+        </div>
+      </div>
+      <div class="seats" id="seats-C"></div>
+      <button class="btn court-next" data-court="C" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M15 4v4h-4M9 20v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        完賽，換下一組
+      </button>
+    </div>
+  </main>
+
+  <section class="bench" id="benchSection" hidden>
+    <div class="bench-head"><h2>休息中</h2><span class="bench-count" id="benchCount">0 人</span></div>
+    <div class="bench-list" id="benchList"></div>
+    <div class="resting-block" id="restingBlock" hidden>
+      <div class="resting-head"><span>臨時不打</span><span id="restingCount">0 人</span></div>
+      <div class="resting-list" id="restingList"></div>
+    </div>
+  </section>
+
+  <section class="stats" id="statsSection" hidden>
+    <div style="font-size:12.5px; font-weight:700; color:var(--muted); letter-spacing:0.06em; text-transform:uppercase; padding:14px 0 8px;">上場次數統計</div>
+    <div id="statsList"></div>
+    <div class="stats-foot">數字為每組被安排上場的次數。系統一律優先安排次數最少的組別，次數相同時隨機挑選；雙人組兩人輪流，所以個人上場機率約為單人組的一半。</div>
+  </section>
+
+  <footer class="app-foot">資料只存在這台裝置的瀏覽器中</footer>
+</div>
+
+<div class="overlay-backdrop" id="importOverlay" hidden>
+  <div class="reset-modal" style="max-width:520px;width:100%;max-height:80vh;overflow:auto;">
+    <h3>貼上名單</h3>
+    <p>每行一個輪替組別，雙人組用「/」分隔，例如：王小明 / 陳小華</p>
+    <textarea id="importText" style="width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:14px;background:var(--surface-2);color:var(--ink);" placeholder="王小明&#10;廉恩 / 詩婷"></textarea>
+    <div id="importPreview" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <label><input type="radio" name="importMode" value="new" checked> 開始新場次</label>
+      <label><input type="radio" name="importMode" value="update"> 更新目前場次</label>
+    </div>
+    <div class="row" style="margin-top:14px;">
+      <button class="btn btn-ghost" id="importCancel" type="button">取消</button>
+      <button class="btn btn-primary" id="importConfirm" type="button">確認匯入</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay-backdrop roster-overlay" id="rosterOverlay" hidden>
+  <div class="roster-sheet">
+    <div class="roster-grabber"></div>
+    <div class="roster-head">
+      <h2>管理名單</h2>
+      <span class="roster-summary-inline" id="rosterSummaryInline">16 組・20 人</span>
+    </div>
+    <p class="roster-hint">雙人組共用一個上場名額，兩人輪流上場，個人上場機率約為單人組的一半。刪除或新增後，正在進行的場次會自動補上空位。<br>填上性別和實力後，系統排人會優先安排「女生對女生」，湊不出來才退而求其次排「一男一女 vs 一男一女」且兩隊實力相近；資料不足或真的湊不出來時會自動退回一般公平安排，場地不會空著。<br>每次安排都會先出現建議名單，可用下拉選單人性化調整任何一位，確認無誤後按「確認，開始打」才會正式計入上場次數；開賽後也能只換掉單一位置，其他 3 人不動，換人一樣走下拉選單。不管怎麼調整，大家的上場次數都會盡量打平。<br>有人臨時不打了，不用刪除他：在「休息中」名單或這裡點「臨時不打」即可，之後安排會自動跳過這位，回來時再點「恢復」就好，上場次數也不會不見。</p>
+    <div class="roster-hint" style="margin:4px 18px 8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="restCompToggle"> 臨時不打場數 (臨時不打的人不補他這段時間沒打到的場數)
+      </label>
+    </div>
+    <div class="roster-list" id="rosterList"></div>
+    <div class="roster-add">
+      <button class="btn btn-outline" id="addSingleBtn" type="button">+ 新增單人</button>
+      <button class="btn btn-outline" id="addPairBtn" type="button">+ 新增雙人組</button>
+      <button class="btn btn-outline" id="pasteRosterBtn" type="button">貼上名單</button>
+    </div>
+    <div class="roster-foot">
+      <button type="button" id="rosterDone">完成</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay-backdrop" id="resetModal" hidden>
+  <div class="reset-modal">
+    <h3>重置上場次數？</h3>
+    <p>會清空目前場上安排與所有人的上場次數紀錄，但不會更動名單，回到「尚未開始」的狀態。</p>
+    <div class="row">
+      <button class="btn btn-ghost" id="resetCancel" type="button">取消</button>
+      <button class="btn btn-danger" id="resetConfirm" type="button">確定重置</button>
+    </div>
+  </div>
+</div>
+
+<script src="roster.js"></script>
+<script src="pairing.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = "badminton_rotation_v3";
+  var LEGACY_KEY_V2 = "badminton_rotation_v2";
+  var LEGACY_KEY_V1 = "badminton_rotation_v1";
+  var REDUCE_MOTION = !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: no-preference)").matches);
+
+  var SKILL_LABELS = {1:"新手", 2:"一般", 3:"高手"};
+  var COURT_LETTERS = ["A", "B", "C"];
+
+  function freshState(){
+    var st = Roster.createDefaultState();
+    return Roster.ensureStateFields(Pairing.ensureStateFields(st));
+  }
+
+  function memberByName(state, name){
+    var key = Roster.normalizeName(name);
+    for(var i=0;i<state.groups.length;i++){
+      var g = state.groups[i];
+      for(var j=0;j<g.memberIds.length;j++){
+        var m = state.members[g.memberIds[j]];
+        if(m && Roster.normalizeName(m.name) === key) return m;
+      }
+    }
+    return null;
+  }
+
+  function migrateV2(parsed){
+    if(!parsed || !parsed.groups || !parsed.members) return freshState();
+    var st = Roster.createDefaultState();
+    // copy courtCount
+    if(parsed.courtCount === 1 || parsed.courtCount === 2 || parsed.courtCount === 3) st.courtCount = parsed.courtCount;
+    // rebuild by existing groups where possible
+    // We'll map default fresh groups? Simpler: reuse parsed groups/members shape if valid
+    if(parsed.nextGroupId) st.nextGroupId = parsed.nextGroupId;
+    if(parsed.nextMemberId) st.nextMemberId = parsed.nextMemberId;
+    st.groups = (parsed.groups || []).map(function(g){ return { id:g.id, memberIds:(g.memberIds||[]).slice() }; });
+    st.members = {};
+    var srcMembers = parsed.members || {};
+    Object.keys(srcMembers).forEach(function(id){
+      var m = srcMembers[id];
+      if(!m) return;
+      st.members[id] = {
+        id: m.id || Number(id),
+        name: m.name || "",
+        groupId: m.groupId,
+        playCount: (typeof m.playCount === "number") ? m.playCount : 0,
+        onCourt: (m.onCourt === "A"||m.onCourt==="B"||m.onCourt==="C") ? m.onCourt : null,
+        gender: (m.gender==="M"||m.gender==="F") ? m.gender : null,
+        skill: (m.skill===1||m.skill===2||m.skill===3) ? m.skill : null,
+        resting: m.resting === true,
+        lastFinishedAt: null,
+        restCreditTotal: 0,
+        restStartAverage: m.resting === true ? 1 : null
+      };
+    });
+    st.groupCounts = {};
+    if(parsed.groupCounts && typeof parsed.groupCounts === "object"){
+      Object.keys(parsed.groupCounts).forEach(function(k){ st.groupCounts[k] = parsed.groupCounts[k]; });
+    } else {
+      st.groups.forEach(function(g){ st.groupCounts[g.id] = 0; });
+    }
+    st.courts = { A:[null,null,null,null], B:[null,null,null,null], C:[null,null,null,null] };
+    var srcCourts = parsed.courts || {};
+    ["A","B","C"].forEach(function(c){
+      var oldSeats = srcCourts[c] || [null,null,null,null];
+      st.courts[c] = oldSeats.map(function(seat){
+        if(!seat) return null;
+        // find member by id or name
+        var mid = seat.memberId;
+        if(!st.members[mid]){
+          // try name
+          var m = memberByName(st, seat.name);
+          if(m) mid = m.id;
+        }
+        if(!st.members[mid]) return null;
+        st.members[mid].onCourt = c;
+        return { groupId: seat.groupId, memberId: mid };
+      });
+    });
+    st.pending = parsed.pending || { A:false, B:false, C:false };
+    ["A","B","C"].forEach(function(c){ if(typeof st.pending[c] !== "boolean") st.pending[c]=false; });
+    st.started = !!parsed.started;
+    st.settings = { restCompensationEnabled: true };
+    st.profiles = {};
+    Roster.ensureProfiles(st);
+    Roster.ensureStateFields(st);
+    Pairing.ensureStateFields(st);
+    if(typeof st.schemaVersion !== "number") st.schemaVersion = 3;
+    return st;
+  }
+
+  function migrateV1(parsed){
+    // 先嘗試舊格式 name-keyed members
+    var st = freshState();
+    if(!(parsed && parsed.members)) return st;
+    st.started = !!parsed.started;
+    if(parsed.courtCount === 1 || parsed.courtCount === 2 || parsed.courtCount === 3) st.courtCount = parsed.courtCount;
+    // playCount by name
+    st.groups.forEach(function(g){
+      g.memberIds.forEach(function(mid){
+        var m = st.members[mid];
+        var old = parsed.members[m.name];
+        if(old){
+          m.playCount = old.playCount || 0;
+          if(old.gender==="M"||old.gender==="F") m.gender = old.gender;
+          if(old.skill===1||old.skill===2||old.skill===3) m.skill = old.skill;
+          if(old.resting === true) m.resting = true;
+        }
+        if(parsed.groupCounts && typeof parsed.groupCounts[g.id] === "number"){
+          st.groupCounts[g.id] = parsed.groupCounts[g.id];
+        }
+      });
+    });
+    ["A","B","C"].forEach(function(c){
+      var oldSeats = (parsed.courts && parsed.courts[c]) || [null,null,null,null];
+      st.courts[c] = oldSeats.map(function(seat){
+        if(!seat) return null;
+        var g = st.groups.filter(function(gg){ return gg.id === seat.groupId; })[0];
+        if(!g) return null;
+        var mid = g.memberIds.filter(function(id){ return st.members[id].name === seat.name; })[0];
+        if(mid == null) return null;
+        st.members[mid].onCourt = c;
+        return { groupId: seat.groupId, memberId: mid };
+      });
+    });
+    st.settings = { restCompensationEnabled: true };
+    Roster.ensureProfiles(st);
+    Pairing.ensureStateFields(st);
+    st.schemaVersion = 3;
+    return st;
+  }
+
+  function normalizeMembers(st){
+    Roster.ensureStateFields(st);
+    Pairing.ensureStateFields(st);
+    if(st.courtCount !== 1 && st.courtCount !== 2 && st.courtCount !== 3) st.courtCount = 3;
+    if(!st.pending) st.pending = {A:false, B:false, C:false};
+    COURT_LETTERS.forEach(function(c){ if(typeof st.pending[c] !== "boolean") st.pending[c] = false; });
+    if(!Array.isArray(st.pendingRejectedMemberIds)) st.pendingRejectedMemberIds = [];
+    if(!st.settings) st.settings = { restCompensationEnabled: true };
+    if(typeof st.settings.restCompensationEnabled !== "boolean") st.settings.restCompensationEnabled = true;
+    if(!st.profiles || typeof st.profiles !== "object") st.profiles = {};
+    if(typeof st.schemaVersion !== "number") st.schemaVersion = 3;
+    Roster.ensureProfiles(st);
+    return st;
+  }
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        if(parsed && parsed.groups && parsed.members) return normalizeMembers(parsed);
+      }
+      var legacyRaw2 = localStorage.getItem(LEGACY_KEY_V2);
+      if(legacyRaw2){
+        return normalizeMembers(Roster.migrateV2(JSON.parse(legacyRaw2)));
+      }
+      var legacyRaw1 = localStorage.getItem(LEGACY_KEY_V1);
+      if(legacyRaw1){
+        return normalizeMembers(Roster.migrateV1(JSON.parse(legacyRaw1)));
+      }
+      return freshState();
+    }catch(e){
+      return freshState();
+    }
+  }
+
+  function showSaveError(){
+    var el = document.getElementById("saveError");
+    if(!el){
+      el = document.createElement("div");
+      el.id = "saveError";
+      el.style.position = "fixed";
+      el.style.bottom = "12px";
+      el.style.left = "50%";
+      el.style.transform = "translateX(-50%)";
+      el.style.background = "var(--danger)";
+      el.style.color = "var(--danger-ink)";
+      el.style.padding = "8px 12px";
+      el.style.borderRadius = "10px";
+      el.style.fontSize = "12px";
+      el.style.zIndex = "100";
+      document.body.appendChild(el);
+    }
+    el.textContent = "儲存失敗，資料可能無法在重整後保留";
+    el.hidden = false;
+  }
+  function hideSaveError(){
+    var el = document.getElementById("saveError");
+    if(el) el.hidden = true;
+  }
+  function save(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      hideSaveError();
+      return true;
+    }catch(e){
+      showSaveError();
+      return false;
+    }
+  }
+
+  var state = load();
+
+  function groupById(id){
+    for(var i=0;i<state.groups.length;i++){ if(state.groups[i].id === id) return state.groups[i]; }
+    return null;
+  }
+  function syncProfileForMember(mid){ var m = state.members[mid]; if(m) Roster.syncProfile(state, m); }
+
+  // A group can be assigned a seat only if nobody in it is already on a court
+  // (their slot is in use elsewhere) AND at least one member isn't "resting"
+  // (temporarily sat out -- see toggleResting). A pair with one resting member
+  // stays available on the other member alone; a single-person group that
+  // rests drops out entirely until brought back.
+  function groupAvailable(g){
+    var hasPlayable = false;
+    for(var i=0;i<g.memberIds.length;i++){
+      var m = state.members[g.memberIds[i]];
+      if(!m || m.onCourt !== null || m.name.trim() === "") return false;
+      if(!m.resting) hasPlayable = true;
+    }
+    return hasPlayable;
+  }
+
+  function availableGroups(){ return state.groups.filter(groupAvailable); }
+
+  function pickGroupForSeat(){
+    var avail = availableGroups();
+    if(!avail.length) return null;
+    var minKey = Infinity;
+    avail.forEach(function(g){ var c = state.groupCounts[g.id]; if(c < minKey) minKey = c; });
+    var cands = avail.filter(function(g){ return state.groupCounts[g.id] === minKey; });
+    return cands[Math.floor(Math.random() * cands.length)];
+  }
+
+  // Only ever considers non-resting members, so a pair where one half has
+  // temporarily stepped out always resolves to the other half rather than
+  // occasionally picking the person who said they're not playing.
+  function pickMemberForGroup(g){
+    var ms = g.memberIds.map(function(id){ return state.members[id]; }).filter(function(m){ return m && !m.resting; });
+    if(!ms.length) return null;
+    if(ms.length === 1) return ms[0];
+    var minC = Math.min.apply(null, ms.map(function(m){ return m.playCount; }));
+    var cands = ms.filter(function(m){ return m.playCount === minC; });
+    return cands[Math.floor(Math.random() * cands.length)];
+  }
+
+  // Toggles whether a member is temporarily sitting out. A resting member is
+  // skipped by every future pick (proposeCourt, fallback fill, the manual
+  // seat picker) but keeps their play-count history, so bringing them back
+  // is a single tap instead of re-adding them and losing their stats.
+  function toggleResting(memberId){
+    Pairing.toggleResting(state, memberId);
+    syncProfileForMember(memberId);
+  }
+
+  // Places `member` into a seat. When commit is true, this is a REAL turn: the
+  // member's playCount and their group's groupCounts go up immediately. When
+  // commit is false, the seat is only a proposal -- nobody's count changes, so
+  // swapping a proposed lineup around before confirming never costs anyone a
+  // "phantom" turn they didn't actually play.
+  function assignSeat(court, seatIndex, member, commit){
+    var seat = state.courts[court][seatIndex];
+    if(seat){
+      var old = state.members[seat.memberId];
+      if(old) old.onCourt = null;
+    }
+    member.onCourt = court;
+    state.courts[court][seatIndex] = {groupId: member.groupId, memberId: member.id};
+    if(commit){
+      member.playCount += 1;
+      state.groupCounts[member.groupId] += 1;
+    }
+  }
+
+  function fillSeat(court, idx){
+    var g = pickGroupForSeat();
+    if(!g){ state.courts[court][idx] = null; return; }
+    assignSeat(court, idx, pickMemberForGroup(g), true);
+  }
+
+  // ---- gender / skill aware court composition ----
+  // Ideal patterns: 4 known-female, or 2 known-male + 2 known-female split into
+  // two 1-male/1-female teams. Falls back to plain fairness when the data or
+  // the available pool can't support an ideal pattern, so courts never sit empty.
+  function combinations4(arr){
+    var n = arr.length, out = [];
+    for(var a=0;a<n-3;a++)
+      for(var b=a+1;b<n-2;b++)
+        for(var c=b+1;c<n-1;c++)
+          for(var d=c+1;d<n;d++)
+            out.push([arr[a],arr[b],arr[c],arr[d]]);
+    return out;
+  }
+
+  function classifyGender(people){
+    for(var i=0;i<people.length;i++){
+      if(people[i].gender !== "M" && people[i].gender !== "F") return null;
+    }
+    var f = people.filter(function(p){ return p.gender === "F"; }).length;
+    var m = people.filter(function(p){ return p.gender === "M"; }).length;
+    if(f === 4) return "FFFF";
+    if(m === 2 && f === 2) return "MIXED";
+    return null;
+  }
+
+  // Validates the ACTUAL seated teams (seats 0-1 vs 2-3), not just the overall
+  // 4-person gender composition -- so the badge only ever claims a pattern that
+  // the displayed team split genuinely satisfies.
+  function actualMatchType(seatPeople){
+    if(seatPeople.some(function(p){ return !p || (p.gender !== "M" && p.gender !== "F"); })) return null;
+    if(seatPeople.every(function(p){ return p.gender === "F"; })) return "FFFF";
+    var teamA = [seatPeople[0], seatPeople[1]];
+    var teamB = [seatPeople[2], seatPeople[3]];
+    function isMixedTeam(t){ return t[0].gender !== t[1].gender; }
+    if(isMixedTeam(teamA) && isMixedTeam(teamB)) return "MIXED";
+    return null;
+  }
+
+  var PAIRINGS = [ [[0,1],[2,3]], [[0,2],[1,3]], [[0,3],[1,2]] ];
+
+  function bestSplit(people, genderType){
+    var valid = PAIRINGS;
+    if(genderType === "MIXED"){
+      valid = PAIRINGS.filter(function(pairing){
+        var a = [people[pairing[0][0]], people[pairing[0][1]]];
+        var b = [people[pairing[1][0]], people[pairing[1][1]]];
+        function mixed(team){ return team[0].gender !== team[1].gender; }
+        return mixed(a) && mixed(b);
+      });
+      if(!valid.length) valid = PAIRINGS;
+    }
+    var allSkillKnown = people.every(function(p){ return p.skill === 1 || p.skill === 2 || p.skill === 3; });
+    var best = null, bestDiff = Infinity;
+    valid.forEach(function(pairing){
+      var teamA = [people[pairing[0][0]], people[pairing[0][1]]];
+      var teamB = [people[pairing[1][0]], people[pairing[1][1]]];
+      var diff = 0;
+      if(allSkillKnown) diff = Math.abs((teamA[0].skill + teamA[1].skill) - (teamB[0].skill + teamB[1].skill));
+      if(diff < bestDiff){ bestDiff = diff; best = {teamA:teamA, teamB:teamB}; }
+    });
+    return { split: best, diff: allSkillKnown ? bestDiff : 0 };
+  }
+
+  // Only ever search among groups within FAIRNESS_TOLERANCE plays of the current
+  // least-played available group, so gender/skill matching can never meaningfully
+  // erode the equal-rotation guarantee -- it only breaks ties among near-equally-fair
+  // options. If no ideal match exists in that narrow window, fall back to the
+  // plain fairest combo from the same window (courts still fill every time).
+  var FAIRNESS_TOLERANCE = 2;
+
+  // Tier 0 = 女生對女生 (FFFF), tier 1 = 一男一女 vs 一男一女 (skill-balanced),
+  // tier 2 = fallback (no gender pattern achievable in this fairness window).
+  // Within a tier, prefer the fairest combo, then the closest skill match.
+  function tierOf(genderType){ return genderType === "FFFF" ? 0 : (genderType === "MIXED" ? 1 : 2); }
+
+  function windowedGroups(avail){
+    if(!avail.length) return [];
+    var minCount = Math.min.apply(null, avail.map(function(g){ return state.groupCounts[g.id]; }));
+    var widened = FAIRNESS_TOLERANCE;
+    var windowGroups = avail.filter(function(g){ return state.groupCounts[g.id] - minCount <= widened; });
+    while(windowGroups.length < 4 && widened < 200){
+      widened += 2;
+      windowGroups = avail.filter(function(g){ return state.groupCounts[g.id] - minCount <= widened; });
+    }
+    return windowGroups;
+  }
+
+  function pickCourtCombo(){
+    var avail = availableGroups();
+    if(avail.length < 4) return null;
+    var windowGroups = windowedGroups(avail);
+    var pool = windowGroups.slice(0, Math.min(windowGroups.length, 12)).map(function(g){
+      return { group:g, person: pickMemberForGroup(g) };
+    });
+    var combos = combinations4(pool);
+    var best = null;
+    combos.forEach(function(combo){
+      var people = combo.map(function(c){ return c.person; });
+      var genderType = classifyGender(people);
+      var tier = tierOf(genderType);
+      var splitInfo = bestSplit(people, genderType);
+      var fairnessSum = combo.reduce(function(s,c){ return s + state.groupCounts[c.group.id]; }, 0);
+      var candidate = { combo:combo, tier:tier, fairnessSum:fairnessSum, skillDiff:splitInfo.diff, split:splitInfo.split, rand:Math.random() };
+      if(!best ||
+        candidate.tier < best.tier ||
+        (candidate.tier === best.tier && candidate.fairnessSum < best.fairnessSum) ||
+        (candidate.tier === best.tier && candidate.fairnessSum === best.fairnessSum && candidate.skillDiff < best.skillDiff) ||
+        (candidate.tier === best.tier && candidate.fairnessSum === best.fairnessSum && candidate.skillDiff === best.skillDiff && candidate.rand < best.rand)
+      ){
+        best = candidate;
+      }
+    });
+    return best;
+  }
+
+  // Proposes a lineup for a court WITHOUT committing any play counts. This is
+  // the "draft" state: seats are filled (so the people involved are marked
+  // unavailable elsewhere), but nobody's playCount/groupCounts move yet. The
+  // human can still rearrange it via the per-seat dropdown; only confirmCourt()
+  // turns it into a real, counted turn.
+  function proposeSeatFallback(court, idx){
+    var g = pickGroupForSeat();
+    if(!g){ state.courts[court][idx] = null; return; }
+    assignSeat(court, idx, pickMemberForGroup(g), false);
+  }
+
+  function proposeCourt(court){
+    // 先釋出此場地原有四個席位（其他場地保持占用）；availableGroups 會自動排除其他場地的人。
+    var best = Pairing.pickBestCourtCombo(state, Date.now());
+    if(!best){
+      // 可用不同組不足 4 組時，盡量補合法人選，不重複同組或同一人。
+      var usedGroups = {};
+      var usedMembers = {};
+      for(var i=0;i<4;i++){
+        // 找下一個可用且未用過組別的成員
+        var persons = Pairing.collectAvailablePersons(state);
+        var next = null;
+        for(var p=0;p<persons.length;p++){
+          if(usedGroups[persons[p].groupId]) continue;
+          if(usedMembers[persons[p].member.id]) continue;
+          next = persons[p];
+          break;
+        }
+        if(!next){ state.courts[court][i] = null; continue; }
+        usedGroups[next.groupId] = true;
+        usedMembers[next.member.id] = true;
+        assignSeat(court, i, next.member, false);
+      }
+    } else {
+      var order = best.seatMembers;
+      for(var i=0;i<4;i++) assignSeat(court, i, order[i], false);
+    }
+    state.pending[court] = true;
+  }
+
+  // 「再換另一批」：把目前這批四人加入暫時扣分，重新產生另一組候選。
+  function regenerateCourt(court){
+    if(!state.pendingRejectedMemberIds) state.pendingRejectedMemberIds = [];
+    (state.courts[court] || []).forEach(function(seat){
+      if(seat && state.pendingRejectedMemberIds.indexOf(seat.memberId) === -1){
+        state.pendingRejectedMemberIds.push(seat.memberId);
+      }
+    });
+    freeCourt(court);
+    var best = Pairing.pickBestCourtCombo(state, Date.now(), Math.random(), state.pendingRejectedMemberIds.slice());
+    if(!best){
+      for(var i=0;i<4;i++){
+        var persons = Pairing.collectAvailablePersons(state);
+        var next = null;
+        var usedGroups = {};
+        for(var p=0;p<persons.length;p++){
+          if(usedGroups[persons[p].groupId]) continue;
+          next = persons[p]; break;
+        }
+        if(!next){ state.courts[court][i]=null; continue; }
+        usedGroups[next.groupId]=true;
+        assignSeat(court, i, next.member, false);
+      }
+    } else {
+      var order = best.seatMembers;
+      for(var i=0;i<4;i++) assignSeat(court, i, order[i], false);
+    }
+    state.pending[court] = true;
+  }
+
+  // Turns a proposed lineup into a real match: only now do the 4 people on
+  // court actually get credit for a turn. If someone was swapped out of the
+  // proposal before this ran, they never picked up a count for it.
+  function confirmCourt(court){
+    state.courts[court].forEach(function(seat){
+      if(!seat) return;
+      var m = state.members[seat.memberId];
+      if(!m) return;
+      m.playCount += 1;
+      state.groupCounts[seat.groupId] += 1;
+    });
+    state.pending[court] = false;
+    state.pendingRejectedMemberIds = [];
+  }
+
+  function refillCourt(court){
+    freeCourt(court);
+    proposeCourt(court);
+  }
+
+  // Builds the ranked candidate list for one seat's dropdown: everyone
+  // currently available (not restricted to the narrow fairness window, so the
+  // human has full manual control), scored the same way as the auto-picker --
+  // 女生對女生 > 男女配對(實力相近) > 其他 -- against the FIXED teammate and
+  // 2 opponents already in the other 3 seats, then sorted best-first so the
+  // recommended pick sits at the top of the dropdown.
+  function scoredCandidatesForSeat(court, seatIndex){
+    var seat = state.courts[court][seatIndex];
+    var outgoingGroupId = seat ? seat.groupId : null;
+    var teammateIndex = seatIndex % 2 === 0 ? seatIndex + 1 : seatIndex - 1;
+    var oppIndexes = seatIndex < 2 ? [2,3] : [0,1];
+    var teammateSeat = state.courts[court][teammateIndex];
+    var opp1Seat = state.courts[court][oppIndexes[0]];
+    var opp2Seat = state.courts[court][oppIndexes[1]];
+    var teammate = teammateSeat ? state.members[teammateSeat.memberId] : null;
+    var opp1 = opp1Seat ? state.members[opp1Seat.memberId] : null;
+    var opp2 = opp2Seat ? state.members[opp2Seat.memberId] : null;
+
+    var avail = availableGroups().filter(function(g){ return g.id !== outgoingGroupId; });
+    var list = avail.map(function(g){
+      var candidate = pickMemberForGroup(g);
+      var tier = 2, diff = 0;
+      if(teammate && opp1 && opp2){
+        var four = [teammate, candidate, opp1, opp2];
+        var genderKnown = four.every(function(p){ return p.gender === "M" || p.gender === "F"; });
+        if(genderKnown){
+          if(four.every(function(p){ return p.gender === "F"; })){
+            tier = 0;
+          } else if(teammate.gender !== candidate.gender && opp1.gender !== opp2.gender){
+            tier = 1;
+          }
+        }
+        var skillKnown = four.every(function(p){ return p.skill === 1 || p.skill === 2 || p.skill === 3; });
+        if(skillKnown) diff = Math.abs((teammate.skill + candidate.skill) - (opp1.skill + opp2.skill));
+      }
+      return { member: candidate, group: g, tier: tier, fairness: state.groupCounts[g.id], diff: diff };
+    });
+    list.sort(function(a,b){
+      if(a.tier !== b.tier) return a.tier - b.tier;
+      if(a.fairness !== b.fairness) return a.fairness - b.fairness;
+      if(a.diff !== b.diff) return a.diff - b.diff;
+      return a.member.name.localeCompare(b.member.name, "zh-Hant");
+    });
+    return list;
+  }
+
+  function activeCourts(){ return COURT_LETTERS.slice(0, state.courtCount); }
+
+  function freeCourt(court){
+    state.courts[court].forEach(function(seat){
+      if(seat){ var m = state.members[seat.memberId]; if(m) m.onCourt = null; }
+    });
+    state.courts[court] = [null,null,null,null];
+  }
+
+  function startAll(){
+    state.pendingRejectedMemberIds = [];
+    activeCourts().forEach(function(c){ proposeCourt(c); });
+    state.started = true;
+  }
+
+  function setCourtCount(n){
+    n = Math.max(1, Math.min(3, n));
+    if(n === state.courtCount) return;
+    var before = activeCourts();
+    state.courtCount = n;
+    var after = activeCourts();
+    before.forEach(function(c){ if(after.indexOf(c) === -1) freeCourt(c); });
+    if(state.started){
+      after.forEach(function(c){ if(before.indexOf(c) === -1) proposeCourt(c); });
+    }
+    save();
+    render();
+  }
+
+  function resetCounts(){
+    Object.keys(state.members).forEach(function(id){
+      var m = state.members[id];
+      m.playCount = 0;
+      m.restCreditTotal = 0;
+      m.lastFinishedAt = null;
+      m.onCourt = null;
+      if(m.resting){ m.restStartAverage = 1; }
+      else { m.restStartAverage = null; }
+    });
+    state.groups.forEach(function(g){ state.groupCounts[g.id] = 0; });
+    state.courts = { A:[null,null,null,null], B:[null,null,null,null], C:[null,null,null,null] };
+    state.pending = { A:false, B:false, C:false };
+    state.pendingRejectedMemberIds = [];
+    state.started = false;
+    save();
+    render();
+  }
+
+  function refillEmptySeatsIfStarted(){
+    if(!state.started) return;
+    activeCourts().forEach(function(c){
+      state.courts[c].forEach(function(seat, idx){ if(!seat) fillSeat(c, idx); });
+    });
+  }
+
+  // ---- roster mutation ----
+  function fairStartCount(excludeGroupId){
+    var others = state.groups.filter(function(g){ return g.id !== excludeGroupId; });
+    if(!others.length) return 0;
+    return Math.min.apply(null, others.map(function(g){ return state.groupCounts[g.id]; }));
+  }
+
+  function addGroup(count){
+    return Roster.addGroup(state, count);
+  }
+
+  function addMemberToGroup(groupId){
+    return Roster.addMemberToGroup(state, groupId);
+  }
+
+  function clearSeatsFor(predicate){
+    ["A","B","C"].forEach(function(c){
+      state.courts[c] = state.courts[c].map(function(seat){
+        return (seat && predicate(seat)) ? null : seat;
+      });
+    });
+  }
+
+  function removeGroup(groupId){
+    var g = groupById(groupId);
+    if(!g) return;
+    clearSeatsFor(function(seat){ return seat.groupId === groupId; });
+    g.memberIds.forEach(function(mid){ delete state.members[mid]; });
+    state.groups = state.groups.filter(function(gg){ return gg.id !== groupId; });
+    delete state.groupCounts[groupId];
+  }
+
+  function removeMember(memberId){
+    var m = state.members[memberId];
+    if(!m) return;
+    var g = groupById(m.groupId);
+    if(!g) return;
+    if(g.memberIds.length <= 1){ removeGroup(g.id); return; }
+    clearSeatsFor(function(seat){ return seat.memberId === memberId; });
+    g.memberIds = g.memberIds.filter(function(id){ return id !== memberId; });
+    delete state.members[memberId];
+  }
+
+  // ---- rendering: main ----
+  var courtsEl = document.getElementById("courts");
+  var startBanner = document.getElementById("startBanner");
+  var benchSection = document.getElementById("benchSection");
+  var statsSection = document.getElementById("statsSection");
+
+  // Which single seat currently has its picker open for a manual swap.
+  // Purely transient UI state, not persisted.
+  var activeSeatPicker = null;
+  var detailStatsOpen = false;
+  var currentImport = null;
+
+  // Builds a small in-card panel of styled option rows (name + gender/skill
+  // chips + times-played + a recommendation star), replacing a plain native
+  // <select> so a seat being edited still looks like the rest of the app
+  // instead of an OS-default dropdown.
+  function buildSeatPicker(court, seatIndex, commit){
+    var seat = state.courts[court][seatIndex];
+    var pending = !!state.pending[court];
+    if(commit === undefined) commit = !pending;
+    var wrap = document.createElement("div");
+    wrap.className = "seat-picker";
+
+    var head = document.createElement("div");
+    head.className = "seat-picker-head";
+    var title = document.createElement("span");
+    title.className = "seat-picker-title";
+    title.textContent = "選擇上場者";
+    head.appendChild(title);
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "seat-picker-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "取消";
+    closeBtn.addEventListener("click", function(e){
+      e.stopPropagation();
+      activeSeatPicker = null;
+      render();
+    });
+    head.appendChild(closeBtn);
+    wrap.appendChild(head);
+
+    var list = document.createElement("div");
+    list.className = "seat-picker-list";
+
+    function makeOption(member, isCurrent, tier){
+      var opt = document.createElement("button");
+      opt.type = "button";
+      opt.className = "picker-option" + (isCurrent ? " is-current" : "");
+
+      var top = document.createElement("div");
+      top.className = "po-top";
+      var nameSpan = document.createElement("span");
+      nameSpan.className = "po-name";
+      nameSpan.textContent = member.name;
+      top.appendChild(nameSpan);
+      if(member.gender === "M" || member.gender === "F"){
+        var gChip = document.createElement("span");
+        gChip.className = "tag-chip sm " + (member.gender === "M" ? "gender-m" : "gender-f");
+        gChip.textContent = member.gender === "M" ? "男" : "女";
+        top.appendChild(gChip);
+      }
+      if(member.skill === 1 || member.skill === 2 || member.skill === 3){
+        var sChip = document.createElement("span");
+        sChip.className = "tag-chip sm skill";
+        sChip.textContent = SKILL_LABELS[member.skill];
+        top.appendChild(sChip);
+      }
+      opt.appendChild(top);
+
+      var bottom = document.createElement("div");
+      bottom.className = "po-bottom";
+      var countSpan = document.createElement("span");
+      countSpan.className = "po-count";
+      countSpan.textContent = "已上" + member.playCount + "次";
+      bottom.appendChild(countSpan);
+      if(isCurrent){
+        var curTag = document.createElement("span");
+        curTag.className = "po-cur";
+        curTag.textContent = "目前";
+        bottom.appendChild(curTag);
+      } else if(tier === 0 || tier === 1){
+        var star = document.createElement("span");
+        star.className = "po-star";
+        star.textContent = tier === 0 ? "★女生對女生" : "★男女配對";
+        bottom.appendChild(star);
+      }
+      opt.appendChild(bottom);
+
+      opt.addEventListener("click", function(e){
+        e.stopPropagation();
+        if(!isCurrent){
+          assignSeat(court, seatIndex, member, commit);
+        }
+        activeSeatPicker = null;
+        save();
+        render();
+      });
+      return opt;
+    }
+
+    if(seat){
+      var curM = state.members[seat.memberId];
+      if(curM) list.appendChild(makeOption(curM, true, null));
+    }
+    var scoredManual = Pairing.scoredManualCandidates(state, court, seatIndex);
+    if(scoredManual.length){
+      var autoBtn = document.createElement("button");
+      autoBtn.type = "button";
+      autoBtn.className = "picker-option";
+      autoBtn.style.fontWeight = "700";
+      autoBtn.textContent = "系統換人";
+      autoBtn.title = "由系統選擇下一位適合的球友";
+      autoBtn.addEventListener("click", function(e){
+        e.stopPropagation();
+        assignSeat(court, seatIndex, scoredManual[0].member, !pending);
+        activeSeatPicker = null;
+        save();
+        render();
+      });
+      list.insertBefore(autoBtn, list.firstChild);
+    }
+    scoredManual.forEach(function(c){
+      list.appendChild(makeOption(c.member, false, (c.pairing > 0 ? 1 : 2)));
+    });
+
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  function rosterCounts(){
+    var groupCount = state.groups.length;
+    var personCount = 0;
+    state.groups.forEach(function(g){ personCount += g.memberIds.length; });
+    return groupCount + " 組・" + personCount + " 人";
+  }
+
+  function renderCourt(court){
+    var seatsEl = document.getElementById("seats-" + court);
+    var subEl = document.getElementById("sub-" + court);
+    var dotEl = document.getElementById("dot-" + court);
+    var seats = state.courts[court];
+    var filled = seats.filter(Boolean).length;
+    var pending = !!state.pending[court];
+    var label = filled === 0 ? "尚未安排" : (pending ? "待確認名單" : "進行中");
+    subEl.textContent = label;
+    dotEl.classList.toggle("active", filled === 4 && !pending);
+
+    var badge = document.getElementById("badge-" + court);
+    if(filled === 4){
+      var seatPeople = seats.map(function(s){ return state.members[s.memberId]; });
+      var matchType = actualMatchType(seatPeople);
+      badge.textContent = matchType === "FFFF" ? "全女生" : (matchType === "MIXED" ? "男女配對" : "");
+      badge.hidden = !matchType;
+    } else {
+      badge.hidden = true;
+    }
+
+    seatsEl.innerHTML = "";
+
+    if(pending){
+      var note = document.createElement("div");
+      note.className = "pending-note";
+      note.textContent = "這是建議名單，點任一位置右上角可換人。按「確認，開始打」後才會正式計入上場次數。";
+      seatsEl.appendChild(note);
+    }
+
+    for(var i=0;i<4;i++){
+      if(i === 2){
+        var vs = document.createElement("div");
+        vs.className = "vs-row";
+        vs.textContent = "VS";
+        seatsEl.appendChild(vs);
+      }
+      var seat = seats[i];
+      var editingThisSeat = (activeSeatPicker && activeSeatPicker.court === court && activeSeatPicker.index === i) || (pending && !seat);
+
+      if(editingThisSeat){
+        seatsEl.appendChild(buildSeatPicker(court, i, !pending));
+        continue;
+      }
+
+      var div = document.createElement("div");
+      if(seat){
+        var m = state.members[seat.memberId];
+        div.className = "seat" + (REDUCE_MOTION ? "" : " pop");
+        var nameEl = document.createElement("div");
+        nameEl.className = "name";
+        nameEl.textContent = m ? m.name : "";
+        div.appendChild(nameEl);
+        var g = groupById(seat.groupId);
+        if(g && g.memberIds.length > 1){
+          var partnerId = g.memberIds.filter(function(id){ return id !== seat.memberId; })[0];
+          var partner = state.members[partnerId];
+          var tag = document.createElement("div");
+          tag.className = "paired-tag";
+          tag.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="12" r="6" stroke="currentColor" stroke-width="2"/><circle cx="15" cy="12" r="6" stroke="currentColor" stroke-width="2"/></svg>';
+          var tagText = document.createElement("span");
+          tagText.textContent = "與 " + (partner ? partner.name : "?") + " 輪流";
+          tag.appendChild(tagText);
+          div.appendChild(tag);
+        }
+        if(m && (m.gender === "M" || m.gender === "F" || m.skill)){
+          var tagsWrap = document.createElement("div");
+          tagsWrap.className = "seat-tags";
+          if(m.gender === "M" || m.gender === "F"){
+            var gChip = document.createElement("span");
+            gChip.className = "tag-chip " + (m.gender === "M" ? "gender-m" : "gender-f");
+            gChip.textContent = m.gender === "M" ? "男" : "女";
+            tagsWrap.appendChild(gChip);
+          }
+          if(m.skill === 1 || m.skill === 2 || m.skill === 3){
+            var sChip = document.createElement("span");
+            sChip.className = "tag-chip skill";
+            sChip.textContent = SKILL_LABELS[m.skill];
+            tagsWrap.appendChild(sChip);
+          }
+          div.appendChild(tagsWrap);
+        }
+        var swapBtn = document.createElement("button");
+        swapBtn.type = "button";
+        swapBtn.className = "seat-swap";
+        swapBtn.title = "換這位";
+        swapBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M15 4v4h-4M9 20v-4h4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        swapBtn.addEventListener("click", makeSwapHandler(court, i));
+        div.appendChild(swapBtn);
+      } else {
+        div.className = "seat empty";
+        div.textContent = "空位";
+      }
+      seatsEl.appendChild(div);
+    }
+
+    var nextBtn = document.querySelector('.court-next[data-court="' + court + '"]');
+    if(nextBtn){
+      if(pending){
+        nextBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>確認，開始打';
+        nextBtn.classList.add("confirm-mode");
+        nextBtn.disabled = filled < 4;
+      } else {
+        nextBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M15 4v4h-4M9 20v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>完賽，換下一組';
+        nextBtn.classList.remove("confirm-mode");
+        nextBtn.disabled = false;
+      }
+    }
+
+    // 再換另一批（只在 pending 建議名單時顯示）
+    var batchBtn = document.getElementById("swapBatch-" + court);
+    if(!batchBtn){
+      batchBtn = document.createElement("button");
+      batchBtn.id = "swapBatch-" + court;
+      batchBtn.type = "button";
+      batchBtn.className = "btn btn-outline";
+      batchBtn.textContent = "再換另一批";
+      batchBtn.style.width = "100%";
+      batchBtn.style.marginTop = "6px";
+      batchBtn.addEventListener("click", function(){
+        if(batchBtn.disabled) return;
+        activeSeatPicker = null;
+        regenerateCourt(court);
+        save();
+        render();
+      });
+      document.getElementById("court-" + court).appendChild(batchBtn);
+    }
+    batchBtn.hidden = !pending;
+    batchBtn.disabled = false;
+  }
+
+  function makeSwapHandler(court, seatIndex){
+    return function(e){
+      e.stopPropagation();
+      activeSeatPicker = { court: court, index: seatIndex };
+      render();
+    };
+  }
+
+  function renderBench(){
+    var avail = availableGroups();
+    var list = document.getElementById("benchList");
+    var count = document.getElementById("benchCount");
+    list.innerHTML = "";
+
+    var benchMembers = [];
+    avail.forEach(function(g){
+      g.memberIds.forEach(function(mid){
+        var m = state.members[mid];
+        if(m && !m.resting) benchMembers.push(m);
+      });
+    });
+    count.textContent = benchMembers.length + " 人";
+
+    if(benchMembers.length === 0){
+      var empty = document.createElement("span");
+      empty.className = "bench-empty";
+      empty.textContent = "目前所有人都在場上";
+      list.appendChild(empty);
+    } else {
+      benchMembers.forEach(function(m){
+        var chip = document.createElement("span");
+        chip.className = "bench-chip";
+        var nameSpan = document.createElement("span");
+        nameSpan.textContent = m.name;
+        chip.appendChild(nameSpan);
+        var restBtn = document.createElement("button");
+        restBtn.type = "button";
+        restBtn.className = "rest-btn";
+        restBtn.textContent = "臨時不打";
+        restBtn.title = "標記" + m.name + "臨時不打，之後安排會跳過這位";
+        restBtn.addEventListener("click", function(){
+          toggleResting(m.id);
+          save();
+          render();
+        });
+        chip.appendChild(restBtn);
+        list.appendChild(chip);
+      });
+    }
+
+    var restingBlock = document.getElementById("restingBlock");
+    var restingList = document.getElementById("restingList");
+    var restingCountEl = document.getElementById("restingCount");
+    var restingMembers = Object.keys(state.members)
+      .map(function(id){ return state.members[id]; })
+      .filter(function(m){ return m.resting && m.name.trim() !== ""; });
+
+    if(restingMembers.length === 0){
+      restingBlock.hidden = true;
+    } else {
+      restingBlock.hidden = false;
+      restingCountEl.textContent = restingMembers.length + " 人";
+      restingList.innerHTML = "";
+      restingMembers.forEach(function(m){
+        var chip = document.createElement("span");
+        chip.className = "resting-chip";
+        var nameSpan = document.createElement("span");
+        nameSpan.textContent = m.name;
+        chip.appendChild(nameSpan);
+        var resumeBtn = document.createElement("button");
+        resumeBtn.type = "button";
+        resumeBtn.className = "resume-btn";
+        resumeBtn.textContent = "恢復";
+        resumeBtn.title = m.name + "回來了，恢復排入輪替";
+        resumeBtn.addEventListener("click", function(){
+          toggleResting(m.id);
+          save();
+          render();
+        });
+        chip.appendChild(resumeBtn);
+        restingList.appendChild(chip);
+      });
+    }
+  }
+
+  function renderStats(){
+    var listEl = document.getElementById("statsList");
+    listEl.innerHTML = "";
+    // 上場次數統計：每人同一長條，實際與不打場數用不同顏色
+    var personMembers = Object.keys(state.members).map(function (id) { return state.members[id]; })
+      .filter(function (m) { return m && m.name.trim() !== ""; });
+    var maxPerson = 1;
+    personMembers.forEach(function (m) {
+      var comp = (m.restCreditTotal || 0) + ((state.settings && state.settings.restCompensationEnabled && m.resting && m.restStartAverage != null)
+        ? Pairing.activeRestCredit(m, Pairing.avgActualPlayCount(state), true) : 0);
+      maxPerson = Math.max(maxPerson, (m.playCount || 0) + comp);
+    });
+    personMembers.forEach(function (m) {
+      var row = document.createElement("div");
+      row.className = "stat-row";
+      var nameEl = document.createElement("div");
+      nameEl.className = "stat-name";
+      nameEl.textContent = m.name;
+      row.appendChild(nameEl);
+
+      var barTrack = document.createElement("div");
+      barTrack.className = "stat-bar-track";
+      barTrack.style.display = "flex";
+      barTrack.style.overflow = "hidden";
+      barTrack.style.flex = "1";
+      var compTotal = (m.restCreditTotal || 0) + ((state.settings && state.settings.restCompensationEnabled && m.resting && m.restStartAverage != null)
+        ? Pairing.activeRestCredit(m, Pairing.avgActualPlayCount(state), true) : 0);
+      var actualWidth = ((m.playCount || 0) / maxPerson * 100);
+      var compWidth = (compTotal / maxPerson * 100);
+      var actualFill = document.createElement("div");
+      actualFill.style.height = "100%";
+      actualFill.style.width = actualWidth + "%";
+      actualFill.style.background = "var(--accent)";
+      var compFill = document.createElement("div");
+      compFill.style.height = "100%";
+      compFill.style.width = compWidth + "%";
+      compFill.style.background = "var(--shuttle)";
+      barTrack.appendChild(actualFill);
+      barTrack.appendChild(compFill);
+      row.appendChild(barTrack);
+
+      var restingComp = (state.settings && state.settings.restCompensationEnabled && m.resting && m.restStartAverage != null)
+        ? Pairing.activeRestCredit(m, Pairing.avgActualPlayCount(state), true) : 0;
+      var info = document.createElement("div");
+      info.style.flex = "0 0 auto";
+      info.style.fontSize = "11px";
+      info.style.color = "var(--muted)";
+      info.style.marginLeft = "8px";
+      info.textContent = "實際 " + (m.playCount || 0) + " / 不打 " + ((m.restCreditTotal || 0) + restingComp).toFixed(1);
+      row.appendChild(info);
+      listEl.appendChild(row);
+    });
+
+    // 詳細統計：顯示每位球友的各項場數
+    var detailStats = document.createElement("details");
+    detailStats.style.marginTop = "10px";
+    detailStats.open = detailStatsOpen;
+    var detailArrow = document.createElement("span");
+    detailArrow.textContent = detailStatsOpen ? "▾" : "▸";
+    detailArrow.style.marginLeft = "8px";
+    detailStats.addEventListener("toggle", function(){
+      detailStatsOpen = detailStats.open;
+      detailArrow.textContent = detailStats.open ? "▾" : "▸";
+    });
+    var detailSummary = document.createElement("summary");
+    detailSummary.style.fontWeight = "700";
+    detailSummary.style.cursor = "pointer";
+    detailSummary.style.display = "flex";
+    detailSummary.style.justifyContent = "space-between";
+    detailSummary.style.alignItems = "center";
+    detailSummary.textContent = "詳細統計";
+    detailSummary.appendChild(detailArrow);
+    // 隱藏原生 disclosure marker，改用右侧箭頭
+    detailSummary.style.listStyle = "none";
+    detailStats.appendChild(detailSummary);
+
+    // 折疊時不顯示；展開時顯示在右側/內容中
+    var detailClock = document.createElement("div");
+    detailClock.id = "statsNowTime";
+    detailClock.style.textAlign = "right";
+    detailClock.style.fontFamily = "'JetBrains Mono',monospace";
+    detailClock.style.fontSize = "11px";
+    detailClock.style.color = "var(--faint)";
+    detailClock.style.padding = "4px 0 8px";
+    detailClock.textContent = "現在時間 --:--:--";
+    detailStats.appendChild(detailClock);
+
+    var members = Object.keys(state.members).map(function (id) { return state.members[id]; })
+      .filter(function (m) { return m && m.name.trim() !== ""; });
+    members.forEach(function (m) {
+      var row = document.createElement("div");
+      row.className = "stat-row";
+      var nameEl = document.createElement("div");
+      nameEl.className = "stat-name";
+      nameEl.style.flex = "0 0 16%";
+      nameEl.style.minWidth = "unset";
+      nameEl.textContent = m.name;
+      row.appendChild(nameEl);
+      var restingComp = (state.settings && state.settings.restCompensationEnabled && m.resting && m.restStartAverage != null)
+        ? Pairing.activeRestCredit(m, Pairing.avgActualPlayCount(state), true) : 0;
+      var info = document.createElement("div");
+      info.style.flex = "1";
+      info.style.fontSize = "12px";
+      info.style.color = "var(--muted)";
+      var lastFinishedText = m.lastFinishedAt ? new Date(m.lastFinishedAt).toLocaleTimeString() : "未記錄";
+      info.textContent = "有效場數 " + Pairing.effectivePlayCount(m, state).toFixed(2)
+        + "｜實際上場 " + (m.playCount || 0)
+        + "｜已結算不打場數 " + ((m.restCreditTotal || 0)).toFixed(1)
+        + "｜目前不打場數 " + (restingComp || 0).toFixed(1)
+        + "｜下場時間 " + lastFinishedText
+        + "｜性別/實力 " + (m.gender === "M" ? "男" : (m.gender === "F" ? "女" : "未設")) + "/" + (m.skill ? SKILL_LABELS[m.skill] : "未設");
+      row.appendChild(info);
+      detailStats.appendChild(row);
+    });
+    listEl.appendChild(detailStats);
+  }
+
+  function renderCourtCountUI(){
+    document.querySelectorAll(".count-btn").forEach(function(btn){
+      btn.classList.toggle("on", Number(btn.getAttribute("data-count")) === state.courtCount);
+    });
+    var active = activeCourts();
+    COURT_LETTERS.forEach(function(c){
+      var el = document.getElementById("court-" + c);
+      if(el) el.hidden = active.indexOf(c) === -1;
+    });
+    courtsEl.className = "courts count-" + state.courtCount;
+    document.getElementById("subline").textContent = state.courtCount + " 場地・機率均等輪替";
+    document.getElementById("startBannerText").textContent =
+      "按下開始，系統會先公平安排 " + active.join("／") + (active.length > 1 ? " 場" : "場") + "，每場 4 人的建議名單。可用下拉選單調整人選，按「確認，開始打」才正式計入上場次數；被換掉還沒打到的人不會被加次數。之後每場打完，各自按「換下一組」即可。人數不對也可以先按「管理名單」增減。";
+  }
+
+  function render(){
+    document.getElementById("startSummary").textContent = rosterCounts();
+    renderCourtCountUI();
+    if(!state.started){
+      startBanner.hidden = false;
+      courtsEl.hidden = true;
+      benchSection.hidden = true;
+      statsSection.hidden = true;
+      return;
+    }
+    startBanner.hidden = true;
+    courtsEl.hidden = false;
+    benchSection.hidden = false;
+    statsSection.hidden = false;
+
+    activeCourts().forEach(function(c){ renderCourt(c); });
+    renderBench();
+    renderStats();
+  }
+
+  // ---- rendering: roster sheet ----
+  var rosterListEl = document.getElementById("rosterList");
+
+  function renderRosterList(focusMemberId){
+    document.getElementById("rosterSummaryInline").textContent = rosterCounts();
+    rosterListEl.innerHTML = "";
+    state.groups.forEach(function(g){
+      var row = document.createElement("div");
+      row.className = "roster-row";
+
+      var fields = document.createElement("div");
+      fields.className = "roster-fields";
+
+      g.memberIds.forEach(function(mid){
+        var m = state.members[mid];
+        var field = document.createElement("div");
+        field.className = "roster-field";
+
+        var input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = "輸入姓名";
+        input.value = m.name;
+        input.maxLength = 12;
+        input.setAttribute("data-member-id", mid);
+        input.addEventListener("input", function(){
+          m.name = input.value;
+          save();
+        });
+        input.addEventListener("blur", function(){
+          m.name = m.name.trim();
+          if(m.name === ""){
+            removeMember(mid);
+            refillEmptySeatsIfStarted();
+            save();
+            renderRosterList();
+            render();
+          } else {
+            Roster.syncProfile(state, m);
+            save();
+            render();
+          }
+        });
+        field.appendChild(input);
+
+        if(g.memberIds.length > 1){
+          var x = document.createElement("button");
+          x.type = "button";
+          x.className = "mini-x";
+          x.textContent = "×";
+          x.title = "移除這位";
+          x.addEventListener("click", function(){
+            removeMember(mid);
+            refillEmptySeatsIfStarted();
+            save();
+            renderRosterList();
+            render();
+          });
+          field.appendChild(x);
+        }
+
+        fields.appendChild(field);
+
+        var meta = document.createElement("div");
+        meta.className = "roster-meta";
+
+        var genderSeg = document.createElement("div");
+        genderSeg.className = "seg";
+        [["M","男","on-m"], ["F","女","on-f"]].forEach(function(opt){
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "seg-btn" + (m.gender === opt[0] ? " " + opt[2] : "");
+          b.textContent = opt[1];
+          b.addEventListener("click", function(){
+            m.gender = (m.gender === opt[0]) ? null : opt[0];
+            Roster.syncProfile(state, m);
+            save();
+            renderRosterList();
+            render();
+          });
+          genderSeg.appendChild(b);
+        });
+        meta.appendChild(genderSeg);
+
+        var skillSeg = document.createElement("div");
+        skillSeg.className = "seg";
+        [1,2,3].forEach(function(lvl){
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "seg-btn" + (m.skill === lvl ? " on-skill" : "");
+          b.textContent = SKILL_LABELS[lvl];
+          b.addEventListener("click", function(){
+            m.skill = (m.skill === lvl) ? null : lvl;
+            Roster.syncProfile(state, m);
+            save();
+            renderRosterList();
+            render();
+          });
+          skillSeg.appendChild(b);
+        });
+        meta.appendChild(skillSeg);
+
+        var restWrap = document.createElement("div");
+        restWrap.className = "seg rest-toggle-wrap";
+        var restBtn = document.createElement("button");
+        restBtn.type = "button";
+        restBtn.className = "seg-btn" + (m.resting ? " on-rest" : "");
+        restBtn.textContent = m.resting ? "臨時不打中" : "臨時不打";
+        restBtn.title = m.resting ? "點一下恢復排入輪替" : "點一下標記臨時不打，之後安排會跳過這位";
+        restBtn.addEventListener("click", function(){
+          toggleResting(mid);
+          save();
+          renderRosterList();
+          render();
+        });
+        restWrap.appendChild(restBtn);
+        meta.appendChild(restWrap);
+
+        fields.appendChild(meta);
+      });
+
+      if(g.memberIds.length === 1){
+        var addPartner = document.createElement("button");
+        addPartner.type = "button";
+        addPartner.className = "add-partner-btn";
+        addPartner.textContent = "+ 新增搭檔（共用一個名額）";
+        addPartner.addEventListener("click", function(){
+          var newMid = addMemberToGroup(g.id);
+          save();
+          renderRosterList(newMid);
+        });
+        fields.appendChild(addPartner);
+      }
+
+      row.appendChild(fields);
+
+      var trailing = document.createElement("div");
+      trailing.className = "roster-row-trailing";
+      var countEl = document.createElement("div");
+      countEl.className = "roster-count";
+      countEl.textContent = "實際 " + g.memberIds.map(function(id){ return state.members[id].playCount || 0; }).join("/") + " 次";
+      trailing.appendChild(countEl);
+
+      var trash = document.createElement("button");
+      trash.type = "button";
+      trash.className = "trash-btn";
+      trash.textContent = "刪除";
+      var confirming = false;
+      var revertTimer = null;
+      trash.addEventListener("click", function(){
+        if(!confirming){
+          confirming = true;
+          trash.classList.add("confirming");
+          trash.textContent = "確定？";
+          revertTimer = setTimeout(function(){
+            confirming = false;
+            trash.classList.remove("confirming");
+            trash.textContent = "刪除";
+          }, 2600);
+          return;
+        }
+        clearTimeout(revertTimer);
+        removeGroup(g.id);
+        refillEmptySeatsIfStarted();
+        save();
+        renderRosterList();
+        render();
+      });
+      trailing.appendChild(trash);
+
+      row.appendChild(trailing);
+      rosterListEl.appendChild(row);
+    });
+
+    if(focusMemberId){
+      var targetInput = rosterListEl.querySelector('input[data-member-id="' + focusMemberId + '"]');
+      if(targetInput) targetInput.focus();
+    }
+  }
+
+  // ---- events ----
+  document.getElementById("startBtn").addEventListener("click", function(){
+    activeSeatPicker = null;
+    startAll();
+    save();
+    render();
+  });
+
+  document.querySelectorAll(".count-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      activeSeatPicker = null;
+      setCourtCount(Number(btn.getAttribute("data-count")));
+    });
+  });
+
+  document.querySelectorAll(".court-next").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      if(btn.disabled) return;
+      activeSeatPicker = null;
+      var court = btn.getAttribute("data-court");
+      if(state.pending[court]){
+        confirmCourt(court);
+      } else {
+        // 完賽事件：先記錄當下四位球友的下場時間，再釋出並產生下一組
+        state.courts[court].forEach(function(seat){
+          if(seat){ var m = state.members[seat.memberId]; if(m) m.lastFinishedAt = Date.now(); }
+        });
+        refillCourt(court);
+      }
+      save();
+      render();
+    });
+  });
+
+  var resetModal = document.getElementById("resetModal");
+  document.getElementById("resetBtn").addEventListener("click", function(){ resetModal.hidden = false; });
+  document.getElementById("resetCancel").addEventListener("click", function(){ resetModal.hidden = true; });
+  document.getElementById("resetConfirm").addEventListener("click", function(){ activeSeatPicker = null; resetModal.hidden = true; resetCounts(); });
+  resetModal.addEventListener("click", function(e){ if(e.target === resetModal) resetModal.hidden = true; });
+
+  var rosterOverlay = document.getElementById("rosterOverlay");
+  function openRoster(){
+    renderRosterList();
+    var toggle = document.getElementById("restCompToggle");
+    if(toggle) toggle.checked = !!(state.settings && state.settings.restCompensationEnabled);
+    rosterOverlay.hidden = false;
+  }
+  function closeRoster(){
+    rosterOverlay.hidden = true;
+    save();
+    render();
+  }
+  document.getElementById("rosterBtn").addEventListener("click", openRoster);
+  document.getElementById("rosterDone").addEventListener("click", closeRoster);
+  rosterOverlay.addEventListener("click", function(e){ if(e.target === rosterOverlay) closeRoster(); });
+
+  var restCompToggle = document.getElementById("restCompToggle");
+  if(restCompToggle){
+    restCompToggle.addEventListener("change", function(){
+      Pairing.setRestCompensationEnabled(state, restCompToggle.checked);
+      save();
+      renderRosterList();
+      render();
+    });
+  }
+
+  var importOverlay = document.getElementById("importOverlay");
+  function openImport(){ 
+    currentImport = null;
+    document.getElementById("importText").value = "";
+    document.getElementById("importPreview").innerHTML = "";
+    var c = document.getElementById("importConfirm"); if(c) c.disabled = true;
+    importOverlay.hidden = false;
+  }
+  function closeImport(){ importOverlay.hidden = true; }
+  function renderImportPreview(){
+    var parsed = Roster.parsePaste(document.getElementById("importText").value);
+    Roster.attachSuggestedProfiles(state, parsed);
+    currentImport = parsed;
+    var previewEl = document.getElementById("importPreview");
+    previewEl.innerHTML = "";
+    if(parsed.errors && parsed.errors.length){
+      var err = document.createElement("div");
+      err.style.color = "var(--danger)";
+      err.textContent = parsed.errors.join("；");
+      previewEl.appendChild(err);
+    }
+    if(parsed.warnings && parsed.warnings.length){
+      var warn = document.createElement("div");
+      warn.style.color = "var(--shuttle)";
+      warn.textContent = parsed.warnings.join("；");
+      previewEl.appendChild(warn);
+    }
+    var summary = document.createElement("div");
+    summary.textContent = "解析出 " + (parsed.groups ? parsed.groups.length : 0) + " 組・" + (parsed.people ? parsed.people.length : 0) + " 人";
+    previewEl.appendChild(summary);
+
+    if(parsed.people && parsed.people.length){
+      var wrap = document.createElement("div");
+      parsed.people.forEach(function(p, i){
+        var row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.gap = "6px";
+        row.style.alignItems = "center";
+        row.style.marginTop = "4px";
+        var nameSpan = document.createElement("span");
+        nameSpan.textContent = p.name;
+        row.appendChild(nameSpan);
+        var sel = document.createElement("select");
+        sel.setAttribute("data-person-index", String(i));
+        var noneOpt = document.createElement("option");
+        noneOpt.value = "__none__";
+        noneOpt.textContent = "不套用舊設定";
+        sel.appendChild(noneOpt);
+        Object.keys(state.profiles || {}).forEach(function(key){
+          var prof = state.profiles[key];
+          var opt = document.createElement("option");
+          opt.value = key;
+          opt.textContent = prof.name + "（" + (prof.gender === "M" ? "男" : (prof.gender === "F" ? "女" : "未設")) + "／" + (prof.skill ? SKILL_LABELS[prof.skill] : "未設") + "）";
+          sel.appendChild(opt);
+        });
+        sel.value = p.suggestedProfile || "__none__";
+        row.appendChild(sel);
+        wrap.appendChild(row);
+      });
+      previewEl.appendChild(wrap);
+    }
+    var confirmBtn = document.getElementById("importConfirm");
+    if(confirmBtn) confirmBtn.disabled = !!(parsed.errors && parsed.errors.length);
+  }
+
+  var importTextEl = document.getElementById("importText");
+  if(importTextEl) importTextEl.addEventListener("input", renderImportPreview);
+
+  document.getElementById("pasteRosterBtn").addEventListener("click", openImport);
+  document.getElementById("importCancel").addEventListener("click", closeImport);
+  importOverlay.addEventListener("click", function(e){ if(e.target === importOverlay) closeImport(); });
+  document.getElementById("importConfirm").addEventListener("click", function(){
+    var parsed = currentImport || Roster.parsePaste(document.getElementById("importText").value);
+    Roster.attachSuggestedProfiles(state, parsed);
+    if(parsed.errors && parsed.errors.length){ alert(parsed.errors.join("；")); return; }
+    var selMap = {};
+    document.querySelectorAll("#importPreview select").forEach(function(sel){
+      selMap[sel.getAttribute("data-person-index")] = sel.value;
+    });
+    var selections = (parsed.people || []).map(function(p, i){
+      return selMap[String(i)] || p.suggestedProfile || "__none__";
+    });
+    var mode = (document.querySelector('input[name="importMode"]:checked') || {value:"new"}).value;
+    var res = Roster.applyImport(state, parsed, mode, selections, Date.now());
+    if(!res || !res.ok){ alert((res && res.errors) ? res.errors.join("；") : "匯入失敗"); return; }
+    // 更新後若有空席且已開始，補位
+    if(state.started){
+      activeCourts().forEach(function(c){
+        state.courts[c].forEach(function(seat, idx){ if(!seat) { /* propose? keep empty */ } });
+      });
+    }
+    closeImport();
+    save();
+    render();
+    renderRosterList();
+  });
+
+  document.getElementById("addSingleBtn").addEventListener("click", function(){
+    var gid = addGroup(1);
+    var g = groupById(gid);
+    var focusId = g && g.memberIds ? g.memberIds[0] : null;
+    save();
+    renderRosterList(focusId);
+  });
+  document.getElementById("addPairBtn").addEventListener("click", function(){
+    var gid = addGroup(2);
+    var g = groupById(gid);
+    var focusId = g && g.memberIds ? g.memberIds[0] : null;
+    save();
+    renderRosterList(focusId);
+  });
+
+  function updateStatsClock(){
+    var el = document.getElementById("statsNowTime");
+    if(el) el.textContent = "現在時間 " + new Date().toLocaleTimeString();
+  }
+  setInterval(updateStatsClock, 1000);
+  updateStatsClock();
+
+  render();
+})();
+</script>
+
+
+</body>
+</html>
