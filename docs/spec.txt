@@ -13,7 +13,7 @@
   ALG-06 選擇與同分        → Pairing.pickBestCourtCombo
   ALG-07 補位              → index.html proposeCourt / regenerateCourt 的 fallback
   ALG-08 單一位置選人      → Pairing.scoredManualCandidates、Pairing.pickFillCandidate
-  ALG-09 不打場數          → activeRestCredit、setResting、setRestCompensationEnabled、Roster.addGroup 等
+  ALG-09 不打場數          → activeRestCredit、setResting、setRestCompensationEnabled、adjustRestCredit、Roster.addGroup 等
   ALG-10 計算範例          → 可用 node 直接呼叫上述函式驗證
 
 一、架構與檔案責任
@@ -84,7 +84,7 @@ ensureStateFields 對缺少 type 的組別補 "single"；migrateV2 補 "rotate"�
 - normalizeName(name)：trim → NFKC → 連續空白合併為一個 → trim → 轉小寫。
 - ensureProfiles：profiles 為空時由目前 members 建立；否則補上 members 中有但 profiles 沒有的姓名（不覆蓋既有）。
 - syncProfile(state, member)：以 member 目前的姓名/性別/實力覆寫該姓名的 profile。UI 在性別、實力切換及姓名 blur 時呼叫；臨時不打切換時也會呼叫。
-- profiles 不會因成員刪除而刪除。
+- profiles 不會因成員刪除而刪除；只有在過去名單按刪除並確認（Roster.deleteProfile）時才刪除。
 - 手動映射至他人的舊設定時，把舊設定的性別/實力複製到新姓名的 profile；不複製 playCount、lastFinishedAt、restCreditTotal。
 
 三、貼上名單解析及匯入
@@ -157,7 +157,8 @@ var SCORE = {
   SKILL_DIFF_3_OR_MORE: -5,
   REST_CREDIT_STEP: 0.5,
   REST_CREDIT_PER_STEP: 0.5,
-  MIN_REST_AVERAGE_BASELINE: 1
+  MIN_REST_AVERAGE_BASELINE: 1,
+  MANUAL_PRIORITY_STEP: 0.5        // 統計區「↑」「↓」每次調整的不打場數
 };
 
 1. 個人分數 individualScore(member, state, avgEff, now)
@@ -247,8 +248,44 @@ var SCORE = {
 
 八、統計和本機儲存
 
+0. 主頁面版面：.wrap max-width 1240px（含左右 16px 內距）；.courts 在 ≥720px 依場地數為 1 欄（最寬 420px 置中）、2 欄、3 欄，<720px 一律 1 欄。
+   實測 3 場：1180×820 每場 372px、1024×768 每場 320px、1366×1024 每場 392px。
 1. 統計 UI（renderStats，僅在 started 時顯示）
-   - 「上場次數統計」：固定展開。每人一條：實際上場（--accent）＋不打場數（--shuttle）分段長條，長度以全體最大（實際＋不打）為 100%；右側文字「實際 N / 不打 X.X」。不打 = restCreditTotal + （開關開啟且休息中時的 activeRestCredit）。
+   - 「上場次數統計」：固定展開。每人一列 .stat-row：
+       .stat-name 寬 5em（13px 字約五個中文字，ellipsis 截斷）；
+       分段長條：實際上場（--accent）＋不打場數（--shuttle），100% = max(1, 各人實際＋不打)；
+       文字「實際 N / 不打 X.X」，不打 = restCreditTotal + （開關開啟且休息中時的 activeRestCredit）；
+       .prio-btns 兩顆 26px 圓鈕「↑」「↓」，點擊呼叫 Pairing.adjustRestCredit(state, id, −1／+1) 成功後 save + render。
+       停用條件：開關關閉（兩顆）；restCreditTotal + 本期 activeRestCredit <= 0（「↑」）。
+   - Pairing.adjustRestCredit(state, memberId, steps)：開關關閉或成員不存在 → false；
+       active = activeRestCredit(m, avgActual, true)；before = restCreditTotal + active；
+       next = max(0, before + steps × MANUAL_PRIORITY_STEP)；next == before → false；
+       active > 0 時 restStartAverage = max(restStartAverage, 1) + (active / REST_CREDIT_PER_STEP) × REST_CREDIT_STEP（本期補償歸零、保留未滿一個門檻的進度）；
+       restCreditTotal = next，回傳 true。
+   - Pairing.ensureStateFields 把負的 restCreditTotal 改為 0。
+   - 管理名單版面（CSS）：
+       .roster-field input：width calc(5em + 22px)（14px 字約五個中文字），不再撐滿整列。
+       .roster-list：display grid，repeat(auto-fill, minmax(min(290px, 100%), 1fr))，欄間距 12px。
+       ≥720px：.roster-sheet 最寬 min(1200px, 100vw − 40px)、最高 100vh − 40px；每組 .roster-row 為卡片（邊框、圓角 --radius-sm），
+       並改成 grid 讓 .roster-row-trailing（次數＋刪除，橫排）疊在卡片右上角、與姓名欄同一行。
+       卡片最小內容寬約 283px（性別／實力／臨時不打按鈕列 257px）。實測：1180×820、1024×768 為 3 欄，820×1180 為 2 欄，375px 為 1 欄。
+   - 管理名單區塊：renderRosterList 依序輸出
+       .roster-section-head「雙人組・雙人輪流 N 組」→ memberIds.length >= 2 的組別；
+       .roster-section-head「單人 N 人」→ 其餘組別（兩者各自保持 state.groups 順序，不修改 state.groups）；
+       .roster-section-head「過去名單 N 人」→ .past-list（.past-chip 按鈕）。
+       區塊標題與 .past-list 以 grid-column: 1 / -1 橫跨整列；區塊為空時顯示 .roster-section-note 提示。
+   - Roster.pastProfiles(state)：ensureProfiles 後，回傳 profiles 中正規化姓名不在目前（姓名非空白）成員內的 { key, profile }，依 name localeCompare("zh-Hant") 排序。
+   - Roster.addMemberFromProfile(state, key)：設定檔不存在或該姓名已在名單中 → null；否則 addGroup(state, 1)（含新人起始補償），
+       把 profile 的 name、gender、skill 寫入新成員，回傳 memberId。點擊 .past-chip 成功後 save、renderRosterList、render。
+   - 過去名單每人為 .past-item（外框）內含 .past-chip（加入）與 .past-del（刪除）兩顆按鈕。
+       .past-del 第一次點：加 .confirming（--danger 底色）、文字改「確定刪除？」，2600 ms 後自動恢復「×」；確認狀態再點：
+       Roster.deleteProfile(state, key) 成功後 save、renderRosterList。
+   - Roster.deleteProfile(state, key)：設定檔不存在或該姓名仍在目前名單中 → false；否則 delete state.profiles[key]，回傳 true。
+   - 雙人類型標示：pairTypeOf(g) = 兩人以上時 type === "fixed" ? "fixed" : "rotate"，否則 null（缺 type 的舊雙人組視為 rotate）。
+       名單卡片：.roster-row 加 .pair-fixed／.pair-rotate（左緣 4px 色條），.roster-fields 第一個子元素為 .pair-badge（PAIR_ICONS 圖示＋PAIR_LABELS 文字）。
+       顏色：fixed 用 --court-c／--court-c-ink（橘），rotate 用 --court-a／--court-a-ink（藍），兩者在深色模式都有對應值。
+       場上座位：.paired-tag 加同名 class 上色，圖示同 PAIR_ICONS，文字「與 X 同隊」或「與 X 輪流」。
+       「分開」按鈕顯示條件改為 memberIds.length === 2（不再限定 type）。
    - 「詳細統計」：<details> 預設收合（展開狀態只存在記憶體）；顯示「現在時間」（每秒更新）及每人：有效場數（2 位小數）、實際上場、已結算不打場數、目前不打場數、下場時間（或「未記錄」）、性別/實力。
    - 名單面板每組顯示「實際 a/b 次」。
 2. 載入順序 load()：badminton_rotation_v3 → badminton_rotation_v2（Roster.migrateV2）→ badminton_rotation_v1（Roster.migrateV1）→ 預設名單。任何解析例外都回到預設名單。載入後 normalizeMembers 補齊欄位（含 pendingRejectedMemberIds、settings、profiles、組別 type），並呼叫 Roster.normalizeSeats 修復座位與 onCourt 不一致的資料。
@@ -259,7 +296,7 @@ var SCORE = {
 
 九、測試（tests/run.js，`node tests/run.js`）
 
-目前 26 項，全部通過：
+目前 31 項，全部通過：
 1. 個人分數邊界（平均 3，count 1.9 / 2 / 2.49 / 2.5 / 3.5 / 3.6 / 4 / 4.01）。
 2. 近期下場 119,999 ms 扣分、120,000 ms 不扣。
 3. 性別加分：FFFF、2M2F 混雙、2M2F 非混雙、性別未知。
@@ -286,6 +323,11 @@ var SCORE = {
 24. normalizeSeats 清除拆在兩隊的固定組，並修復被卡住的 onCourt。
 25. pickFillCandidate 依評分選人，排除臨時不打與固定組成員。
 26. removeMember 後剩一人的組別改為 single。
+27. adjustRestCredit：+0.5／−0.5、下限 0、系統起始補償可扣到 0、開關關閉不調整。
+28. adjustRestCredit 可把休息中累積的補償扣到 0，並保留未滿 0.5 的進度。
+29. ensureStateFields 把負的 restCreditTotal 改為 0。
+30. pastProfiles 只列不在目前名單中的設定檔；addMemberFromProfile 以單人加入並帶入性別／實力，重複或不存在時回傳 null。
+31. deleteProfile 刪除過去名單設定檔；目前名單中的人或不存在的 key 回傳 false。
 
 refillEmptySeatsIfStarted 位於 index.html，無單元測試；已於瀏覽器手動驗證：待確認名單刪人補位不計次、進行中場地補位 +1、更新匯入後座位保留並補位。
 

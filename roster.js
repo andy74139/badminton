@@ -181,6 +181,51 @@
     return state.profiles[normalizeName(name)] || null;
   }
 
+  // 過去名單：瀏覽器中保存過、但目前不在本場名單裡的人員設定檔，依姓名排序。
+  function pastProfiles(state) {
+    ensureProfiles(state);
+    var current = {};
+    Object.keys(state.members || {}).forEach(function (id) {
+      var m = state.members[id];
+      if (memberHasName(m)) current[normalizeName(m.name)] = true;
+    });
+    return Object.keys(state.profiles)
+      .filter(function (key) { return !current[key]; })
+      .map(function (key) { return { key: key, profile: state.profiles[key] }; })
+      .sort(function (a, b) { return a.profile.name.localeCompare(b.profile.name, "zh-Hant"); });
+  }
+
+  // 從過去名單加入一位單人：帶入設定檔的姓名、性別、實力；本場統計比照新增成員（含新人起始補償）。
+  // 已在本場名單中或設定檔不存在時回傳 null。
+  function addMemberFromProfile(state, profileKey) {
+    var prof = state.profiles && state.profiles[profileKey];
+    if (!prof) return null;
+    var exists = Object.keys(state.members || {}).some(function (id) {
+      var m = state.members[id];
+      return memberHasName(m) && normalizeName(m.name) === profileKey;
+    });
+    if (exists) return null;
+    var gid = addGroup(state, 1);
+    var g = state.groups.filter(function (gg) { return gg.id === gid; })[0];
+    var m = state.members[g.memberIds[0]];
+    m.name = prof.name;
+    m.gender = prof.gender;
+    m.skill = prof.skill;
+    return m.id;
+  }
+
+  // 從過去名單刪除一位人員設定檔（使用者明確刪除時才會刪）。仍在目前名單中的人不能刪，回傳 false。
+  function deleteProfile(state, profileKey) {
+    if (!state.profiles || !state.profiles[profileKey]) return false;
+    var inRoster = Object.keys(state.members || {}).some(function (id) {
+      var m = state.members[id];
+      return memberHasName(m) && normalizeName(m.name) === profileKey;
+    });
+    if (inRoster) return false;
+    delete state.profiles[profileKey];
+    return true;
+  }
+
   // 貼上名單中標記固定雙人組的寫法，例如「王小明 / 陳小華 / [固定]」
   var FIXED_MARKERS = ["[固定]", "(固定)", "【固定】"];
 
@@ -746,6 +791,9 @@
     ensureProfiles: ensureProfiles,
     syncProfile: syncProfile,
     profileForName: profileForName,
+    pastProfiles: pastProfiles,
+    addMemberFromProfile: addMemberFromProfile,
+    deleteProfile: deleteProfile,
     buildProfilesFromMembers: buildProfilesFromMembers,
     parsePaste: parsePaste,
     attachSuggestedProfiles: attachSuggestedProfiles,

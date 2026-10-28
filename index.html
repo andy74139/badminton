@@ -93,7 +93,8 @@
     100%{ transform: scale(1); opacity:1; }
   }
 
-  .wrap{ max-width: 900px; margin: 0 auto; padding: 18px 16px 56px; }
+  /* 平板橫向開 3 個場地時每場仍需足夠寬度，主頁面最寬 1240px（約與管理名單面板同寬） */
+  .wrap{ max-width: 1240px; margin: 0 auto; padding: 18px 16px 56px; }
 
   header.top{
     position:relative;
@@ -359,10 +360,17 @@
   details.stats[open] summary .chev{ transform: rotate(90deg); }
 
   .stat-row{ display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line); }
-  .stat-row .stat-name{ flex:0 0 34%; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stat-row .stat-name{ flex:0 0 5em; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .stat-row .stat-bar-track{ flex:1; height:8px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
   .stat-row .stat-bar-fill{ height:100%; background:var(--accent); border-radius:999px; }
   .stat-row .stat-num{ flex:0 0 26px; text-align:right; font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--muted); font-variant-numeric: tabular-nums; }
+  .prio-btns{ flex:none; display:flex; gap:4px; }
+  .prio-btn{
+    flex:none; width:26px; height:26px; border:none; border-radius:999px; cursor:pointer;
+    background:var(--surface-3); color:var(--muted); font-size:13px; font-weight:700; line-height:1;
+  }
+  .prio-btn:active{ transform: scale(0.92); }
+  .prio-btn:disabled{ opacity:0.35; cursor:default; transform:none; }
   .stats-foot{ padding:12px 0 14px; font-size:11.5px; color:var(--faint); line-height:1.6; border-top:1px solid var(--line); }
 
   footer.app-foot{ text-align:center; margin-top:22px; font-size:11px; color:var(--faint); }
@@ -401,16 +409,30 @@
   .roster-head h2{ margin:0; font-size:16px; font-weight:900; }
   .roster-summary-inline{ font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--faint); }
   .roster-hint{ margin:6px 18px 4px; font-size:12px; color:var(--muted); line-height:1.55; background:var(--accent-soft); padding:10px 12px; border-radius:10px; }
-  .roster-list{ overflow-y:auto; padding:10px 18px 6px; flex:1; }
+  /* 名單以格線排列：手機一欄；平板（直向約 2 欄、橫向約 3 欄）每組改成卡片 */
+  .roster-list{
+    overflow-y:auto; padding:10px 18px 6px; flex:1;
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(min(290px, 100%), 1fr)); column-gap:12px; align-content:start;
+  }
   .roster-row{
     display:flex; align-items:flex-start; gap:8px;
     padding:10px 0; border-top:1px solid var(--line);
   }
   .roster-row:first-child{ border-top:none; }
+  @media (min-width: 720px){
+    .roster-sheet{ max-width:min(1200px, calc(100vw - 40px)); max-height:calc(100vh - 40px); }
+    .roster-list{ row-gap:12px; }
+    .roster-row, .roster-row:first-child{ border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px 12px; }
+    /* 次數與刪除改放卡片右上角（與較短的姓名欄同一行），讓卡片可以窄到三欄 */
+    .roster-row{ display:grid; grid-template-columns:minmax(0, 1fr) auto; }
+    .roster-row .roster-fields{ grid-area:1 / 1 / 2 / 3; }
+    .roster-row .roster-row-trailing{ grid-area:1 / 2 / 2 / 3; flex-direction:row; align-items:center; }
+  }
   .roster-fields{ flex:1; display:flex; flex-direction:column; gap:6px; min-width:0; }
   .roster-field{ display:flex; align-items:center; gap:6px; }
+  /* 姓名欄只需約五個中文字寬 */
   .roster-field input{
-    flex:1; min-width:0; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);
+    flex:none; width:calc(5em + 22px); min-width:0; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);
     border-radius:9px; padding:8px 10px; font-size:14px;
   }
   .roster-field input::placeholder{ color:var(--faint); }
@@ -452,13 +474,51 @@
   details > summary{ list-style:none; }
   details > summary::-webkit-details-marker{ display:none; }
   
-  /* ---- type labels ---- */
-  .roster-type-badge{
-    display:inline-block; margin-left:6px; padding:2px 6px; border-radius:6px; font-size:9px; font-weight:700;
+  /* ---- 管理名單三個區塊：雙人組 → 單人 → 過去名單 ---- */
+  .roster-section-head{
+    grid-column:1 / -1; display:flex; align-items:baseline; gap:8px;
+    margin:14px 0 6px; padding-bottom:6px; border-bottom:1px solid var(--line);
   }
-  .roster-type-badge.rotate{ background:var(--accent); color:var(--accent-ink); }
-  .roster-type-badge.fixed{ background:var(--danger); color:var(--danger-ink); }
-  .roster-type-badge.single{ background:var(--muted); color:var(--paper); }
+  .roster-section-head:first-child{ margin-top:2px; }
+  .roster-section-head h3{ margin:0; font-size:13px; font-weight:900; color:var(--ink); letter-spacing:0.04em; }
+  .roster-section-count{ font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--faint); }
+  .roster-section-note{ grid-column:1 / -1; margin:0 0 8px; font-size:11.5px; color:var(--faint); line-height:1.5; }
+  .roster-section-head + .roster-row, .roster-section-note + .roster-row{ border-top:none; }
+  .past-list{ grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; padding-bottom:6px; }
+  .past-item{
+    display:inline-flex; align-items:center;
+    background:var(--surface); border:1px dashed var(--line); border-radius:999px;
+  }
+  .past-chip{
+    display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+    background:none; border:none; border-radius:999px;
+    padding:6px 6px 6px 8px; font-size:13px; font-weight:500; color:var(--muted);
+  }
+  .past-del{
+    flex:none; min-width:24px; height:24px; margin-right:4px; padding:0 6px; cursor:pointer;
+    border:none; border-radius:999px; background:none; color:var(--faint); font-size:14px; line-height:1;
+  }
+  .past-del:active{ transform: scale(0.92); }
+  .past-del.confirming{ background:var(--danger); color:var(--danger-ink); font-size:11px; font-weight:700; }
+  .past-chip:active{ transform: scale(0.95); background:var(--surface-3); }
+  .past-chip-plus{
+    width:18px; height:18px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent-strong); font-weight:900; font-size:13px; line-height:1;
+  }
+
+  /* ---- 雙人組類型標示：雙人組（固定同隊）橘色、雙人輪流藍色 ---- */
+  .roster-row.pair-fixed, .roster-row.pair-rotate{ border-left:4px solid; padding-left:10px; }
+  .roster-row.pair-fixed{ border-left-color:var(--court-c); }
+  .roster-row.pair-rotate{ border-left-color:var(--court-a); }
+  .pair-badge{
+    align-self:flex-start; display:inline-flex; align-items:center; gap:4px;
+    padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; line-height:1.2;
+  }
+  .pair-badge svg{ flex:none; }
+  .pair-badge.fixed{ background:var(--court-c); color:var(--court-c-ink); }
+  .pair-badge.rotate{ background:var(--court-a); color:var(--court-a-ink); }
+  .seat .paired-tag.fixed{ color:var(--court-c); font-weight:700; }
+  .seat .paired-tag.rotate{ color:var(--court-a); font-weight:700; }
 </style>
 </head>
 <body>
@@ -630,6 +690,17 @@
   var REDUCE_MOTION = !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: no-preference)").matches);
 
   var SKILL_LABELS = {1:"新手", 2:"一般", 3:"高手"};
+
+  // 雙人組類型標示（名單卡片與場上座位共用）。缺少 type 的舊資料雙人組行為等同輪流，也標成輪流。
+  var PAIR_ICONS = {
+    fixed: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="12" r="6" stroke="currentColor" stroke-width="2.4"/><circle cx="15" cy="12" r="6" stroke="currentColor" stroke-width="2.4"/></svg>',
+    rotate: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M15 4v4h-4M9 20v-4h4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  };
+  var PAIR_LABELS = { fixed: "雙人組・同隊上場", rotate: "雙人輪流・共用名額" };
+  function pairTypeOf(g){
+    if(!g || g.memberIds.length < 2) return null;
+    return g.type === "fixed" ? "fixed" : "rotate";
+  }
   var COURT_LETTERS = ["A", "B", "C"];
 
   function freshState(){
@@ -1520,14 +1591,11 @@ if(!best){
           var partnerId = g.memberIds.filter(function(id){ return id !== seat.memberId; })[0];
           var partner = state.members[partnerId];
           var tag = document.createElement("div");
-          tag.className = "paired-tag";
-          tag.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="12" r="6" stroke="currentColor" stroke-width="2"/><circle cx="15" cy="12" r="6" stroke="currentColor" stroke-width="2"/></svg>';
+          var pairType = pairTypeOf(g);
+          tag.className = "paired-tag " + pairType;
+          tag.innerHTML = PAIR_ICONS[pairType];
           var tagText = document.createElement("span");
-          if(g.type === "fixed"){
-            tagText.textContent = "與 " + (partner ? partner.name : "?") + " 同隊";
-          } else if(g.type === "rotate"){
-            tagText.textContent = "與 " + (partner ? partner.name : "?") + " 輪流";
-          }
+          tagText.textContent = "與 " + (partner ? partner.name : "?") + (pairType === "fixed" ? " 同隊" : " 輪流");
           tag.appendChild(tagText);
           div.appendChild(tag);
         }
@@ -1695,6 +1763,7 @@ if(!best){
         ? Pairing.activeRestCredit(m, Pairing.avgActualPlayCount(state), true) : 0);
       maxPerson = Math.max(maxPerson, (m.playCount || 0) + comp);
     });
+    var compEnabled = !!(state.settings && state.settings.restCompensationEnabled);
     personMembers.forEach(function (m) {
       var row = document.createElement("div");
       row.className = "stat-row";
@@ -1733,6 +1802,29 @@ if(!best){
       info.style.marginLeft = "8px";
       info.textContent = "實際 " + (m.playCount || 0) + " / 不打 " + ((m.restCreditTotal || 0) + restingComp).toFixed(1);
       row.appendChild(info);
+
+      // 手動調整優先度：加減不打場數（開關關閉時不打場數不影響選人，按鈕停用）
+      var step = Pairing.SCORE.MANUAL_PRIORITY_STEP;
+      var prio = document.createElement("div");
+      prio.className = "prio-btns";
+      [[-1, "↑", "提高 " + m.name + " 的優先度（不打 −" + step + "）"],
+       [1, "↓", "降低 " + m.name + " 的優先度（不打 +" + step + "）"]].forEach(function (opt) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "prio-btn";
+        b.textContent = opt[1];
+        b.title = compEnabled ? opt[2] : "需開啟「臨時不打場數」才能調整";
+        b.setAttribute("aria-label", opt[2]);
+        b.disabled = !compEnabled || (opt[0] < 0 && (m.restCreditTotal || 0) + restingComp <= 0);
+        b.addEventListener("click", function () {
+          if (Pairing.adjustRestCredit(state, m.id, opt[0])) {
+            save();
+            render();
+          }
+        });
+        prio.appendChild(b);
+      });
+      row.appendChild(prio);
       listEl.appendChild(row);
     });
 
@@ -1841,12 +1933,137 @@ if(!best){
   function renderRosterList(focusMemberId){
     document.getElementById("rosterSummaryInline").textContent = rosterCounts();
     rosterListEl.innerHTML = "";
-    state.groups.forEach(function(g){
+    // 三個區塊：雙人組（固定、輪流）→ 單人 → 過去名單。前兩區各自維持原本名單順序。
+    // 只影響畫面，不改 state.groups 的順序。
+    var pairs = state.groups.filter(function(g){ return g.memberIds.length >= 2; });
+    var singles = state.groups.filter(function(g){ return g.memberIds.length < 2; });
+    var past = Roster.pastProfiles(state);
+
+    appendRosterSectionHead("雙人組・雙人輪流", pairs.length + " 組",
+      pairs.length ? null : "目前沒有雙人組。可在單人卡片下方選另一人，按「連結」組成。");
+    pairs.forEach(renderGroupRow);
+    appendRosterSectionHead("單人", singles.length + " 人",
+      singles.length ? null : "目前沒有單人。");
+    singles.forEach(renderGroupRow);
+    appendRosterSectionHead("過去名單", past.length + " 人",
+      past.length ? "曾經登記過、但不在目前名單中的人。點一下即以單人加入目前名單，並帶入之前的性別與實力。" : "沒有其他過去登記過的人。");
+    if(past.length) rosterListEl.appendChild(buildPastList(past));
+
+    if(focusMemberId){
+      var targetInput = rosterListEl.querySelector('input[data-member-id="' + focusMemberId + '"]');
+      if(targetInput) targetInput.focus();
+    }
+  }
+
+  function appendRosterSectionHead(title, countText, note){
+    var head = document.createElement("div");
+    head.className = "roster-section-head";
+    var h = document.createElement("h3");
+    h.textContent = title;
+    head.appendChild(h);
+    var count = document.createElement("span");
+    count.className = "roster-section-count";
+    count.textContent = countText;
+    head.appendChild(count);
+    rosterListEl.appendChild(head);
+    if(note){
+      var p = document.createElement("p");
+      p.className = "roster-section-note";
+      p.textContent = note;
+      rosterListEl.appendChild(p);
+    }
+  }
+
+  // 過去名單：每人一顆按鈕（姓名＋性別/實力），點擊後以單人加入目前名單
+  function buildPastList(past){
+    var wrap = document.createElement("div");
+    wrap.className = "past-list";
+    past.forEach(function(item){
+      var prof = item.profile;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "past-chip";
+      btn.title = "把 " + prof.name + " 加入目前名單";
+      var plus = document.createElement("span");
+      plus.className = "past-chip-plus";
+      plus.textContent = "+";
+      btn.appendChild(plus);
+      var nameSpan = document.createElement("span");
+      nameSpan.textContent = prof.name;
+      btn.appendChild(nameSpan);
+      if(prof.gender === "M" || prof.gender === "F"){
+        var gChip = document.createElement("span");
+        gChip.className = "tag-chip sm " + (prof.gender === "M" ? "gender-m" : "gender-f");
+        gChip.textContent = prof.gender === "M" ? "男" : "女";
+        btn.appendChild(gChip);
+      }
+      if(prof.skill === 1 || prof.skill === 2 || prof.skill === 3){
+        var sChip = document.createElement("span");
+        sChip.className = "tag-chip sm skill";
+        sChip.textContent = SKILL_LABELS[prof.skill];
+        btn.appendChild(sChip);
+      }
+      btn.addEventListener("click", function(){
+        if(Roster.addMemberFromProfile(state, item.key) == null) return;
+        save();
+        renderRosterList();
+        render();
+      });
+
+      // 刪除：第一次點變成「確定刪除？」，約 2.6 秒內再點一次才刪，避免誤按
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "past-del";
+      del.textContent = "×";
+      del.title = "從過去名單刪除 " + prof.name;
+      del.setAttribute("aria-label", "從過去名單刪除 " + prof.name);
+      var confirming = false;
+      var revertTimer = null;
+      del.addEventListener("click", function(){
+        if(!confirming){
+          confirming = true;
+          del.classList.add("confirming");
+          del.textContent = "確定刪除？";
+          revertTimer = setTimeout(function(){
+            confirming = false;
+            del.classList.remove("confirming");
+            del.textContent = "×";
+          }, 2600);
+          return;
+        }
+        clearTimeout(revertTimer);
+        if(!Roster.deleteProfile(state, item.key)) return;
+        save();
+        renderRosterList();
+      });
+
+      var itemEl = document.createElement("span");
+      itemEl.className = "past-item";
+      itemEl.appendChild(btn);
+      itemEl.appendChild(del);
+      wrap.appendChild(itemEl);
+    });
+    return wrap;
+  }
+
+  function renderGroupRow(g){
       var row = document.createElement("div");
       row.className = "roster-row";
 
       var fields = document.createElement("div");
       fields.className = "roster-fields";
+
+      var pairType = pairTypeOf(g);
+      if(pairType){
+        row.classList.add("pair-" + pairType);
+        var badge = document.createElement("span");
+        badge.className = "pair-badge " + pairType;
+        badge.innerHTML = PAIR_ICONS[pairType];
+        var badgeText = document.createElement("span");
+        badgeText.textContent = PAIR_LABELS[pairType];
+        badge.appendChild(badgeText);
+        fields.appendChild(badge);
+      }
 
       g.memberIds.forEach(function(mid){
         var m = state.members[mid];
@@ -1956,9 +2173,8 @@ if(!best){
         fields.appendChild(meta);
       });
 
-      // Remove type badge as requested - each person left side marker not needed
-      // Add unlink button for double groups
-      if(g.memberIds.length === 2 && (g.type === "fixed" || g.type === "rotate")){
+      // 雙人組都可「分開」（含缺少 type 的舊資料雙人組）
+      if(g.memberIds.length === 2){
         var unlinkBtn = document.createElement("button");
         unlinkBtn.type = "button";
         unlinkBtn.className = "add-partner-btn";
@@ -2103,12 +2319,6 @@ if(!best){
 
       row.appendChild(trailing);
       rosterListEl.appendChild(row);
-    });
-
-    if(focusMemberId){
-      var targetInput = rosterListEl.querySelector('input[data-member-id="' + focusMemberId + '"]');
-      if(targetInput) targetInput.focus();
-    }
   }
 
   // ---- events ----

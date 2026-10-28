@@ -405,6 +405,94 @@ test("pickFillCandidate uses scoring and skips fixed pairs and resting", functio
   assert.ok(pick && ["永謙", "炫州", "四月"].indexOf(pick.name) === -1, "picked " + (pick && pick.name));
 });
 
+test("adjustRestCredit changes priority via rest credit", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  var m = membersArr(st)[0];
+  m.playCount = 1;
+  // 降低優先度：不打 +0.5，有效場數變高
+  assert.strictEqual(P.adjustRestCredit(st, m.id, 1), true);
+  assert.strictEqual(m.restCreditTotal, 0.5);
+  assert.strictEqual(P.effectivePlayCount(m, st), 1.5);
+  // 提高優先度：不打場數最低到 0，不會變負數
+  assert.strictEqual(P.adjustRestCredit(st, m.id, -1), true);
+  assert.strictEqual(m.restCreditTotal, 0);
+  assert.strictEqual(P.adjustRestCredit(st, m.id, -1), false);
+  assert.strictEqual(m.restCreditTotal, 0);
+  // 系統給的起始補償（例如新人 1.5）可以一路扣到 0
+  m.restCreditTotal = 1.5;
+  P.adjustRestCredit(st, m.id, -1); P.adjustRestCredit(st, m.id, -1); P.adjustRestCredit(st, m.id, -1);
+  assert.strictEqual(m.restCreditTotal, 0);
+  assert.strictEqual(P.adjustRestCredit(st, m.id, -1), false);
+  // 開關關閉時不調整
+  st.settings.restCompensationEnabled = false;
+  assert.strictEqual(P.adjustRestCredit(st, m.id, 1), false);
+  assert.strictEqual(m.restCreditTotal, 0);
+});
+
+test("adjustRestCredit can lower credit earned during current rest to 0", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  var all = membersArr(st);
+  var m = all[0];
+  P.setResting(st, m.id, true);               // 基準 = max(平均 0, 1) = 1
+  all.forEach(function(x){ if (x !== m) x.playCount = 2.2; }); // 平均實際 2.2 → 本期補償 1.0（進度多 0.2）
+  assert.strictEqual(P.activeRestCredit(m, P.avgActualPlayCount(st), true), 1);
+  // ↑ 一次：不打 1.0 → 0.5，本期補償併入已結算
+  assert.strictEqual(P.adjustRestCredit(st, m.id, -1), true);
+  assert.strictEqual(m.restCreditTotal, 0.5);
+  assert.strictEqual(P.activeRestCredit(m, P.avgActualPlayCount(st), true), 0);
+  assert.strictEqual(P.effectivePlayCount(m, st), 0.5);
+  // 再 ↑ 一次到 0，之後不能再降
+  P.adjustRestCredit(st, m.id, -1);
+  assert.strictEqual(P.effectivePlayCount(m, st), 0);
+  assert.strictEqual(P.adjustRestCredit(st, m.id, -1), false);
+  // 保留未滿 0.5 的進度：平均再 +0.3（2.5）就跨過下一個門檻，補償照常累積
+  all.forEach(function(x){ if (x !== m) x.playCount = 2.5; });
+  assert.strictEqual(P.activeRestCredit(m, P.avgActualPlayCount(st), true), 0.5);
+});
+
+test("ensureStateFields clamps negative rest credit to 0", function() {
+  var st = R.createDefaultState();
+  membersArr(st)[0].restCreditTotal = -1;
+  P.ensureStateFields(st);
+  assert.strictEqual(membersArr(st)[0].restCreditTotal, 0);
+});
+
+test("pastProfiles lists saved people not in current roster, addMemberFromProfile adds them", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  st.profiles = {};
+  R.ensureProfiles(st);
+  st.profiles["老王"] = { name: "老王", gender: "M", skill: 3 };
+  st.profiles["alice"] = { name: "Alice", gender: "F", skill: 1 };
+  var past = R.pastProfiles(st).map(function(p){ return p.key; });
+  assert.deepStrictEqual(past.sort(), ["alice", "老王"]);
+  var mid = R.addMemberFromProfile(st, "老王");
+  var m = st.members[mid];
+  assert.strictEqual(m.name, "老王");
+  assert.strictEqual(m.gender, "M");
+  assert.strictEqual(m.skill, 3);
+  assert.strictEqual(m.playCount, 0);
+  var g = st.groups.find(function(g){ return g.id === m.groupId; });
+  assert.strictEqual(g.type, "single");
+  assert.deepStrictEqual(R.pastProfiles(st).map(function(p){ return p.key; }), ["alice"]);
+  // 已在名單中或不存在的設定檔不會重複加入
+  assert.strictEqual(R.addMemberFromProfile(st, "老王"), null);
+  assert.strictEqual(R.addMemberFromProfile(st, "nobody"), null);
+});
+
+test("deleteProfile removes past profile but not people in current roster", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  R.ensureProfiles(st);
+  st.profiles["老王"] = { name: "老王", gender: "M", skill: 3 };
+  assert.strictEqual(R.deleteProfile(st, "老王"), true);
+  assert.strictEqual(st.profiles["老王"], undefined);
+  assert.ok(R.pastProfiles(st).every(function(p){ return p.key !== "老王"; }));
+  // 目前名單中的人不能刪
+  var inRoster = R.normalizeName(membersArr(st)[0].name);
+  assert.strictEqual(R.deleteProfile(st, inRoster), false);
+  assert.ok(st.profiles[inRoster]);
+  assert.strictEqual(R.deleteProfile(st, "nobody"), false);
+});
+
 test("removeMember turns remaining pair member into single", function() {
   var st = R.createDefaultState();
   var g = st.groups.find(function(g){ return g.memberIds.length === 2; });

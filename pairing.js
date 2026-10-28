@@ -17,7 +17,9 @@
     SKILL_DIFF_3_OR_MORE: -5,
     REST_CREDIT_STEP: 0.5,
     REST_CREDIT_PER_STEP: 0.5,
-    MIN_REST_AVERAGE_BASELINE: 1
+    MIN_REST_AVERAGE_BASELINE: 1,
+    // 統計區「優先↑／優先↓」每按一次調整的不打場數
+    MANUAL_PRIORITY_STEP: 0.5
   };
 
   function nowMs() { return Date.now(); }
@@ -327,6 +329,28 @@
     }
   }
 
+  // 手動調整優先度：加減「不打場數」（已結算＋目前休息期間已達成的補償）。
+  //  steps > 0 → 不打場數增加 → 有效場數變高 → 優先度降低
+  //  steps < 0 → 不打場數減少 → 有效場數變低 → 優先度提高
+  // 不打場數不低於 0；系統自動給的不打場數（臨時不打補償、新人起始補償）也可以一路扣到 0。
+  // 開關關閉時不打場數不計入有效場數，因此不調整。
+  function adjustRestCredit(state, memberId, steps) {
+    var m = state.members[memberId];
+    if (!m || !(state.settings && state.settings.restCompensationEnabled)) return false;
+    var active = activeRestCredit(m, avgActualPlayCount(state), true);
+    var before = (m.restCreditTotal || 0) + active;
+    var next = Math.max(0, before + steps * SCORE.MANUAL_PRIORITY_STEP);
+    if (next === before) return false;
+    if (active > 0) {
+      // 休息中：先把本期已達成的補償結算進已結算不打場數，並把基準往後移同樣的門檻數，
+      // 本期補償歸零但保留尚未滿 0.5 的進度，之後照常累積。
+      m.restStartAverage = Math.max(m.restStartAverage, SCORE.MIN_REST_AVERAGE_BASELINE)
+        + (active / SCORE.REST_CREDIT_PER_STEP) * SCORE.REST_CREDIT_STEP;
+    }
+    m.restCreditTotal = next;
+    return true;
+  }
+
   function ensureStateFields(state) {
     if (!state) return state;
     if (!state.settings) state.settings = { restCompensationEnabled: true };
@@ -340,6 +364,8 @@
       if (m.playCount === undefined || m.playCount === null) m.playCount = 0;
       if (m.lastFinishedAt === undefined) m.lastFinishedAt = null;
       if (m.restCreditTotal === undefined || m.restCreditTotal === null) m.restCreditTotal = 0;
+      // 不打場數不可為負（舊版手動調整可能存成負數）
+      if (m.restCreditTotal < 0) m.restCreditTotal = 0;
       if (m.restStartAverage === undefined) m.restStartAverage = null;
       if (m.onCourt === undefined) m.onCourt = null;
     });
@@ -456,6 +482,7 @@
     toggleResting: toggleResting,
     setResting: setResting,
     setRestCompensationEnabled: setRestCompensationEnabled,
+    adjustRestCredit: adjustRestCredit,
     ensureStateFields: ensureStateFields,
     displayStats: displayStats,
     memberHasName: memberHasName
