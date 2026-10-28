@@ -2,22 +2,19 @@
   "use strict";
 
   var DEFAULT_GROUPS = [
-    { id: 1, names: ["述懷"], type: "single" },
-    { id: 2, names: ["睿汎"], type: "single" },
-    { id: 3, names: ["述懷友"], type: "single" },
-    { id: 4, names: ["廉恩", "詩婷"], type: "rotate" },
-    { id: 5, names: ["皓昕", "郁婷"], type: "rotate" },
-    { id: 6, names: ["宜蓁", "楷鵑"], type: "rotate" },
-    { id: 7, names: ["翊暄", "采音"], type: "rotate" },
-    { id: 8, names: ["俊宏"], type: "single" },
-    { id: 9, names: ["永謙"], type: "single" },
-    { id: 10, names: ["炫州"], type: "single" },
-    { id: 11, names: ["四月"], type: "single" },
-    { id: 12, names: ["Cindy"], type: "single" },
-    { id: 13, names: ["鄧斌"], type: "single" },
-    { id: 14, names: ["石承恩"], type: "single" },
-    { id: 15, names: ["吳承樺"], type: "single" },
-    { id: 16, names: ["廖奕深"], type: "single" }
+    { id: 1, names: ["俊宏"], type: "single" },
+    { id: 2, names: ["皓昕"], type: "single" },
+    { id: 3, names: ["翊暄"], type: "single" },
+    { id: 4, names: ["詩婷"], type: "single" },
+    { id: 5, names: ["楷鵑"], type: "single" },
+    { id: 6, names: ["沂蓁"], type: "single" },
+    { id: 7, names: ["采音"], type: "single" },
+    { id: 8, names: ["廉恩"], type: "single" },
+    { id: 9, names: ["四月"], type: "single" },
+    { id: 10, names: ["有軒"], type: "single" },
+    { id: 11, names: ["永謙"], type: "single" },
+    { id: 12, names: ["炫州"], type: "single" },
+    { id: 13, names: ["Bebe"], type: "single" },
   ];
 
   // 姓名正規化：去除前後空白、合併中間多餘空白、英文字母轉小寫；必要時做 NFKC。
