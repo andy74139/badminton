@@ -2,22 +2,22 @@
   "use strict";
 
   var DEFAULT_GROUPS = [
-    { id: 1, names: ["述懷"] },
-    { id: 2, names: ["睿汎"] },
-    { id: 3, names: ["述懷友"] },
-    { id: 4, names: ["廉恩", "詩婷"] },
-    { id: 5, names: ["皓昕", "郁婷"] },
-    { id: 6, names: ["宜蓁", "楷鵑"] },
-    { id: 7, names: ["翊暄", "采音"] },
-    { id: 8, names: ["俊宏"] },
-    { id: 9, names: ["永謙"] },
-    { id: 10, names: ["炫州"] },
-    { id: 11, names: ["四月"] },
-    { id: 12, names: ["Cindy"] },
-    { id: 13, names: ["鄧斌"] },
-    { id: 14, names: ["石承恩"] },
-    { id: 15, names: ["吳承樺"] },
-    { id: 16, names: ["廖奕深"] }
+    { id: 1, names: ["述懷"], type: "single" },
+    { id: 2, names: ["睿汎"], type: "single" },
+    { id: 3, names: ["述懷友"], type: "single" },
+    { id: 4, names: ["廉恩", "詩婷"], type: "rotate" },
+    { id: 5, names: ["皓昕", "郁婷"], type: "rotate" },
+    { id: 6, names: ["宜蓁", "楷鵑"], type: "rotate" },
+    { id: 7, names: ["翊暄", "采音"], type: "rotate" },
+    { id: 8, names: ["俊宏"], type: "single" },
+    { id: 9, names: ["永謙"], type: "single" },
+    { id: 10, names: ["炫州"], type: "single" },
+    { id: 11, names: ["四月"], type: "single" },
+    { id: 12, names: ["Cindy"], type: "single" },
+    { id: 13, names: ["鄧斌"], type: "single" },
+    { id: 14, names: ["石承恩"], type: "single" },
+    { id: 15, names: ["吳承樺"], type: "single" },
+    { id: 16, names: ["廖奕深"], type: "single" }
   ];
 
   // 姓名正規化：去除前後空白、合併中間多餘空白、英文字母轉小寫；必要時做 NFKC。
@@ -37,6 +37,18 @@
     if (!state || !state.groups) return [];
     return state.groups.filter(function (g) {
       if (!g || !g.memberIds) return false;
+      // fixed type: both members must be playable (not resting, not on court, have names)
+      if (g.type === "fixed") {
+        for (var i = 0; i < g.memberIds.length; i++) {
+          var m = state.members[g.memberIds[i]];
+          if (!m) return false;
+          if (m.onCourt !== null && m.onCourt !== undefined) return false;
+          if (String(m.name || "").trim() === "") return false;
+          if (m.resting) return false; // both must be non-resting
+        }
+        return true; // both members are playable
+      }
+      // single/rotate type: at least one member must be playable
       var hasPlayable = false;
       for (var i = 0; i < g.memberIds.length; i++) {
         var m = state.members[g.memberIds[i]];
@@ -77,6 +89,12 @@
     if (state.nextGroupId === undefined) state.nextGroupId = state.groups ? state.groups.length + 1 : 1;
     if (state.nextMemberId === undefined) state.nextMemberId = 1;
     if (state.schemaVersion === undefined) state.schemaVersion = 3;
+    // Ensure type field exists for each group
+    if (state.groups) {
+      state.groups.forEach(function (g) {
+        if (!g.type) g.type = "single";
+      });
+    }
     Object.keys(state.members || {}).forEach(function (id) {
       ensureMemberFields(state.members[id]);
     });
@@ -98,7 +116,7 @@
         };
         return id;
       });
-      groups.push({ id: g.id, memberIds: memberIds });
+      groups.push({ id: g.id, memberIds: memberIds, type: g.type || "single" });
       groupCounts[g.id] = 0;
     });
     return ensureStateFields({
@@ -163,6 +181,9 @@
     return state.profiles[normalizeName(name)] || null;
   }
 
+  // 貼上名單中標記固定雙人組的寫法，例如「王小明 / 陳小華 / [固定]」
+  var FIXED_MARKERS = ["[固定]", "(固定)", "【固定】"];
+
   // 貼上名單解析
   function parsePaste(text) {
     var result = { ok: true, errors: [], warnings: [], people: [], groups: [], lines: [] };
@@ -181,22 +202,32 @@
 
     meaningful.forEach(function (item) {
       var parts = item.text.split("/").map(function (s) { return s.trim(); });
+      // 類型標記：最後一段為 [固定]、(固定)、【固定】 時視為固定雙人組；須先移除標記再檢查成員數。
+      var type = null;
+      if (FIXED_MARKERS.indexOf(parts[parts.length - 1]) !== -1) {
+        type = "fixed";
+        parts = parts.slice(0, -1);
+      }
       if (parts.length > 2) {
         result.errors.push("第 " + item.lineNo + " 行超過兩個成員");
         result.ok = false;
         result.lines.push({ lineNo: item.lineNo, names: parts, error: "超過兩個成員" });
         return;
       }
-      if (parts.some(function (p) { return p === ""; })) {
+      if (parts.length === 0 || parts.some(function (p) { return p === ""; })) {
         result.errors.push("第 " + item.lineNo + " 行有空姓名");
         result.ok = false;
         result.lines.push({ lineNo: item.lineNo, names: parts, error: "空姓名" });
         return;
       }
-      if (parts.length === 1 && parts[0] === "") {
-        // already handled
+      if (type === "fixed" && parts.length !== 2) {
+        result.errors.push("第 " + item.lineNo + " 行固定雙人組需要兩位成員");
+        result.ok = false;
+        result.lines.push({ lineNo: item.lineNo, names: parts, error: "固定雙人組需要兩位成員" });
+        return;
       }
-      result.lines.push({ lineNo: item.lineNo, names: parts });
+      if (!type) type = parts.length === 2 ? "rotate" : "single";
+      result.lines.push({ lineNo: item.lineNo, names: parts, type: type });
     });
 
     // 收集 people / groups，只在無致命格式錯誤時繼續
@@ -207,8 +238,9 @@
 
     var groupCounter = 0;
     result.lines.forEach(function (l) {
-      var group = { index: groupCounter++, names: l.names.slice(), personIndexes: [] };
-      l.names.forEach(function (nm) {
+      var names = l.names;
+      var group = { index: groupCounter++, names: names.slice(), type: l.type, personIndexes: [] };
+      names.forEach(function (nm, gi) {
         var person = { name: nm, normalizedName: normalizeName(nm) };
         person.index = result.people.length;
         group.personIndexes.push(person.index);
@@ -252,6 +284,51 @@
     });
   }
 
+  // 讓場上座位與名單一致：
+  //  1. 成員或其組別已不存在 → 清空座位；座位的 groupId 一律改成成員目前的 groupId。
+  //  2. 非固定組同時有多人在場上 → 只保留第一個座位（依 A、B、C 場地及座位順序）。
+  //  3. 固定雙人組兩人都在場上，但不在同一場地的同一隊 → 兩個座位都清空。
+  //  4. 依座位重建每位成員的 onCourt，避免有人被標記在場上卻沒有座位而永遠排不到。
+  function normalizeSeats(state) {
+    var groupMap = {};
+    (state.groups || []).forEach(function (g) { groupMap[g.id] = g; });
+    var courtLetters = ["A", "B", "C"];
+    var seatsByGroup = {};
+    courtLetters.forEach(function (c) {
+      if (!state.courts[c]) state.courts[c] = [null, null, null, null];
+      state.courts[c] = state.courts[c].map(function (seat, idx) {
+        if (!seat) return null;
+        var m = state.members[seat.memberId];
+        if (!m || !groupMap[m.groupId]) return null;
+        if (!seatsByGroup[m.groupId]) seatsByGroup[m.groupId] = [];
+        seatsByGroup[m.groupId].push({ court: c, idx: idx });
+        return { groupId: m.groupId, memberId: m.id };
+      });
+    });
+    Object.keys(seatsByGroup).forEach(function (gid) {
+      var spots = seatsByGroup[gid];
+      if (spots.length < 2) return;
+      var toClear;
+      if (groupMap[gid].type === "fixed") {
+        var sameTeam = spots.length === 2 && spots[0].court === spots[1].court
+          && Math.floor(spots[0].idx / 2) === Math.floor(spots[1].idx / 2);
+        toClear = sameTeam ? [] : spots;
+      } else {
+        toClear = spots.slice(1);
+      }
+      toClear.forEach(function (s) { state.courts[s.court][s.idx] = null; });
+    });
+    Object.keys(state.members || {}).forEach(function (id) {
+      if (state.members[id]) state.members[id].onCourt = null;
+    });
+    courtLetters.forEach(function (c) {
+      state.courts[c].forEach(function (seat) {
+        if (seat) state.members[seat.memberId].onCourt = c;
+      });
+    });
+    return state;
+  }
+
   function removeMember(state, memberId) {
     var m = state.members[memberId];
     if (!m) return;
@@ -267,6 +344,8 @@
     }
     clearSeatsFor(state, function (seat) { return seat.memberId === memberId; });
     g.memberIds = g.memberIds.filter(function (id) { return id !== memberId; });
+    // 雙人組只剩一人時改為單人組（固定雙人組少一人就無法再被安排）
+    if (g.memberIds.length === 1) g.type = "single";
     delete state.members[memberId];
   }
 
@@ -289,7 +368,7 @@
       };
       memberIds.push(mid);
     }
-    state.groups.push({ id: id, memberIds: memberIds });
+    state.groups.push({ id: id, memberIds: memberIds, type: count === 1 ? "single" : "rotate" });
     if (!state.groupCounts) state.groupCounts = {};
     // 公平起始：取其他組的最小次數
     var others = state.groups.filter(function (g) { return g.id !== id; });
@@ -316,6 +395,8 @@
       restCreditTotal: comp, restStartAverage: null
     };
     g.memberIds.push(mid);
+    // 如果群組原本是 single 且新增第2個成員，變為 rotate
+    if (g.type === "single") g.type = "rotate";
     return mid;
   }
 
@@ -393,7 +474,7 @@
           // update profile final
           profiles[normalizeName(nm)] = { name: nm.trim(), gender: member.gender, skill: member.skill };
         });
-        groups.push({ id: gid, memberIds: memberIds });
+        groups.push({ id: gid, memberIds: memberIds, type: grp.type || "rotate" });
         groupCounts[gid] = 0;
       });
 
@@ -507,7 +588,7 @@
         }
         profiles[nkey] = { name: nm.trim(), gender: membersMap[memberIds[memberIds.length - 1]].gender, skill: membersMap[memberIds[memberIds.length - 1]].skill };
       });
-      newGroups.push({ id: gid, memberIds: memberIds });
+      newGroups.push({ id: gid, memberIds: memberIds, type: grp.type || "rotate" });
       state.groupCounts[gid] = 0;
     });
 
@@ -520,21 +601,13 @@
         delete membersMap[id];
       }
     });
-    // clear seats invalid
-    clearSeatsFor(state, function (seat) {
-      var m = state.members[seat.memberId];
-      if (!m) return true;
-      if (!importedNormalizedSet[normalizeName(m.name)]) return true;
-      // group mismatch: find if member's group exists in newGroups
-      var ok = newGroups.some(function (g) { return g.memberIds.indexOf(seat.memberId) !== -1 && g.id === seat.groupId; });
-      return !ok;
-    });
-
     // apply
     state.nextGroupId = seqG2;
     state.nextMemberId = seqM2;
     state.groups = newGroups;
     state.members = membersMap;
+    // 組別已重新編號：保留仍在名單中的人的座位並改用新 groupId，清掉被移除者及組別關係變更後不合法的座位。
+    normalizeSeats(state);
     state.profiles = profiles;
     state.groupCounts = state.groupCounts || {};
     // ensure groupCounts for new groups
@@ -565,7 +638,13 @@
     if (parsed.courtCount === 1 || parsed.courtCount === 2 || parsed.courtCount === 3) st.courtCount = parsed.courtCount;
     if (parsed.nextGroupId) st.nextGroupId = parsed.nextGroupId;
     if (parsed.nextMemberId) st.nextMemberId = parsed.nextMemberId;
-    st.groups = (parsed.groups || []).map(function (g) { return { id: g.id, memberIds: (g.memberIds || []).slice() }; });
+    st.groups = (parsed.groups || []).map(function (g) { 
+      return { 
+        id: g.id, 
+        memberIds: (g.memberIds||[]).slice(), 
+        type: g.type || "rotate" 
+      }; 
+    });
     st.members = {};
     var srcMembers = parsed.members || {};
     Object.keys(srcMembers).forEach(function (id) {
@@ -672,6 +751,7 @@
     attachSuggestedProfiles: attachSuggestedProfiles,
     applyImport: applyImport,
     clearSeatsFor: clearSeatsFor,
+    normalizeSeats: normalizeSeats,
     removeMember: removeMember,
     addGroup: addGroup,
     addMemberToGroup: addMemberToGroup,

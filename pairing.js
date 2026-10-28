@@ -113,53 +113,16 @@
     return genderBonusForSplit(people, split) + skillPenaltyForSplit(people, split);
   }
 
-  // 最佳拆分：回傳 { split, pairingScore, seatMembers (依 teamA+teamB 順序) }
-  function bestSplitForFour(people, rng) {
-    rng = (typeof rng === "function") ? rng : Math.random;
-    var bestScore = -Infinity;
-    var candidates = [];
+  // 所有分組：回傳所有合規的分組及分數
+  function allSplitsForFour(people) {
+    var out = [];
     PAIRINGS.forEach(function (split) {
       var s = pairingScoreForSplit(people, split);
-      if (s > bestScore) {
-        bestScore = s;
-        candidates = [split];
-      } else if (s === bestScore) {
-        candidates.push(split);
-      }
+      var orderIndices = split[0].concat(split[1]);
+      var seatMembers = orderIndices.map(function (i) { return people[i]; });
+      out.push({ split: split, pairingScore: s, seatMembers: seatMembers });
     });
-    // 在所有 split 中取 max；上面只在 > 時重設，= 時累積；但需包含所有 max
-    // 重新計算 robustly：
-    var maxS = -Infinity;
-    PAIRINGS.forEach(function (split) {
-      var s = pairingScoreForSplit(people, split);
-      if (s > maxS) maxS = s;
-    });
-    var maxCands = PAIRINGS.filter(function (split) { return pairingScoreForSplit(people, split) === maxS; });
-    var chosen = maxCands[Math.floor(rng() * maxCands.length)];
-    var orderIndices = chosen[0].concat(chosen[1]);
-    var seatMembers = orderIndices.map(function (i) { return people[i]; });
-    return { split: chosen, pairingScore: maxS, seatMembers: seatMembers };
-  }
-
-  // 組合列舉
-  function collectAvailablePersons(state) {
-    var availGroups = (global.Roster && global.Roster.availableGroups) ? global.Roster.availableGroups(state) : null;
-    if (!availGroups) {
-      // fallback 簡易
-      availGroups = [];
-    }
-    var persons = [];
-    availGroups.forEach(function (g) {
-      (g.memberIds || []).forEach(function (mid) {
-        var m = state.members[mid];
-        if (!m) return;
-        if (String(m.name || "").trim() === "") return;
-        if (m.resting) return;
-        if (m.onCourt !== null && m.onCourt !== undefined) return;
-        persons.push({ member: m, groupId: g.id });
-      });
-    });
-    return persons;
+    return out;
   }
 
   function combinationsIndices(n, k) {
@@ -181,42 +144,117 @@
     if (typeof rng !== "function") rng = Math.random;
     if (!Array.isArray(rejectedIds)) rejectedIds = [];
     var persons = collectAvailablePersons(state);
-    // 至少 4 個不同組
-    var groups = {};
-    persons.forEach(function (p) { groups[p.groupId] = true; });
-    if (Object.keys(groups).length < 4) return null;
+    if (persons.length < 4) return null;
 
     var avgEff = avgEffectivePlayCount(state);
     var t = (now === undefined || now === null) ? nowMs() : now;
     var combos = combinationsIndices(persons.length, 4);
     var bestScore = -Infinity;
     var bestCombos = [];
-    combos.forEach(function (ci) {
+    for (var comboIdx = 0; comboIdx < combos.length; comboIdx++) {
+      var ci = combos[comboIdx];
       var four = ci.map(function (i) { return persons[i]; });
-      // group distinct
-      var gset = {};
+      // 統計這四人來自哪些 group，並檢查：
+      //  (1) 非固定組：同一組（例如 rotate 的兩人）不可同時上場
+      //  (2) 固定組：只要有人在這四人中，兩人就必須「都」在
+      var groupCountInCombo = {};
+      var fixedGroupIds = [];
       var distinct = true;
-      four.forEach(function (p) {
-        if (gset[p.groupId]) distinct = false;
-        gset[p.groupId] = true;
+      for (var gchk = 0; gchk < four.length; gchk++) {
+        var pchk = four[gchk];
+        groupCountInCombo[pchk.groupId] = (groupCountInCombo[pchk.groupId] || 0) + 1;
+        if (pchk.groupType === "fixed") {
+          if (fixedGroupIds.indexOf(pchk.groupId) === -1) fixedGroupIds.push(pchk.groupId);
+        } else if (groupCountInCombo[pchk.groupId] > 1) {
+          distinct = false;
+        }
+      }
+      if (!distinct) continue;
+      var fixedComplete = true;
+      for (var fg = 0; fg < fixedGroupIds.length; fg++) {
+        if (groupCountInCombo[fixedGroupIds[fg]] !== 2) { fixedComplete = false; break; }
+      }
+      if (!fixedComplete) continue;
+      // 每組固定雙人組的兩個 member id，供下面檢查「同隊」使用
+      var fixedPairMemberIds = fixedGroupIds.map(function (gid) {
+        return four.filter(function (p) { return p.groupId === gid; })
+                   .map(function (p) { return p.member.id; });
       });
-      if (!distinct) return;
+      var fixedPairCountInCombo = fixedPairMemberIds.length;
       var people = four.map(function (p) { return p.member; });
       var sumInd = people.reduce(function (s, m) { return s + individualScore(m, state, avgEff, t); }, 0);
-      var bsplit = bestSplitForFour(people, rng);
-      var rejectedPenalty = people.reduce(function (s, m) { return s + (rejectedIds.indexOf(m.id) !== -1 ? SCORE.REJECTED_PERSON_PENALTY : 0); }, 0);
-      var total = sumInd + bsplit.pairingScore + rejectedPenalty;
-      var rec = { persons: four, people: people, seatMembers: bsplit.seatMembers, pairingScore: bsplit.pairingScore, split: bsplit.split, score: total, rand: rng() };
-      if (total > bestScore) {
-        bestScore = total;
-        bestCombos = [rec];
-      } else if (total === bestScore) {
-        bestCombos.push(rec);
+      var allSplits = allSplitsForFour(people);
+      if(!allSplits.length) continue;
+      for(var spIdx=0;spIdx<allSplits.length;spIdx++){
+        var sp = allSplits[spIdx];
+        // 固定雙人組必須在同一隊（seatMembers 的前兩位是一隊、後兩位是另一隊）。
+        // 注意：seatMembers 裡是 member 物件，識別欄位是 .id（不是 .memberId）。
+        if (fixedPairCountInCombo > 0) {
+          var teamOfMember = {};
+          for (var sif = 0; sif < sp.seatMembers.length; sif++) {
+            teamOfMember[sp.seatMembers[sif].id] = (sif < 2) ? 0 : 1;
+          }
+          var allFixedSameTeam = true;
+          for (var fpi = 0; fpi < fixedPairMemberIds.length; fpi++) {
+            if (teamOfMember[fixedPairMemberIds[fpi][0]] !== teamOfMember[fixedPairMemberIds[fpi][1]]) {
+              allFixedSameTeam = false;
+              break;
+            }
+          }
+          if (!allFixedSameTeam) continue;
+        }
+        var rp = 0;
+        for(var rpi=0;rpi<people.length;rpi++){ if(rejectedIds.indexOf(people[rpi].id) !== -1) rp += SCORE.REJECTED_PERSON_PENALTY; }
+        var total = sumInd + sp.pairingScore + rp;
+        var rec = { persons: four, people: people, seatMembers: sp.seatMembers, pairingScore: sp.pairingScore, split: sp.split, score: total, rand: rng() };
+        if (total > bestScore) {
+          bestScore = total;
+          bestCombos = [rec];
+        } else if (total === bestScore) {
+          bestCombos.push(rec);
+        }
       }
-    });
+      continue;
+    }
     if (!bestCombos.length) return null;
-    var chosen = bestCombos[Math.floor(rng() * bestCombos.length)];
+    var chosen;
+    var TEMP = 1.5;
+    var weights = bestCombos.map(function (rec) {
+      return Math.exp((rec.score - bestScore) / TEMP);
+    });
+    var sum = weights.reduce(function (a, b) { return a + b; }, 0);
+    var r = rng() * sum;
+    var acc = 0;
+    for (var i = 0; i < bestCombos.length; i++) {
+      acc += weights[i];
+      if (r <= acc) {
+        chosen = bestCombos[i];
+        break;
+      }
+    }
+    if (!chosen) chosen = bestCombos[bestCombos.length - 1];
     return chosen;
+  }
+
+  function collectAvailablePersons(state) {
+    var availGroups = (global.Roster && global.Roster.availableGroups) ? global.Roster.availableGroups(state) : [];
+    var persons = [];
+    availGroups.forEach(function (g) {
+      (g.memberIds || []).forEach(function (mid) {
+        var m = state.members[mid];
+        if (!m) return;
+        if (String(m.name || "").trim() === "") return;
+        if (m.resting) return;
+        if (m.onCourt !== null && m.onCourt !== undefined) return;
+        persons.push({
+          member: m,
+          groupId: g.id,
+          groupType: g.type,
+          isFixedPair: g.type === "fixed"
+        });
+      });
+    });
+    return persons;
   }
 
   // 切換臨時不打：處理補償結算／建立基準
@@ -389,6 +427,15 @@
     return list;
   }
 
+  // 自動補單一空位（刪除人員、匯入後）：與「系統換人」相同的排序取第一名，
+  // 但排除固定雙人組成員，因為只補一個位置會把固定組拆開。
+  function pickFillCandidate(state, court, seatIndex) {
+    var list = scoredManualCandidates(state, court, seatIndex).filter(function (c) {
+      return c.group.type !== "fixed";
+    });
+    return list.length ? list[0].member : null;
+  }
+
   var api = {
     SCORE: SCORE,
     avgActualPlayCount: avgActualPlayCount,
@@ -400,11 +447,12 @@
     genderBonusForSplit: genderBonusForSplit,
     skillPenaltyForSplit: skillPenaltyForSplit,
     pairingScoreForSplit: pairingScoreForSplit,
-    bestSplitForFour: bestSplitForFour,
+    allSplitsForFour: allSplitsForFour,
     collectAvailablePersons: collectAvailablePersons,
     combinationsIndices: combinationsIndices,
     pickBestCourtCombo: pickBestCourtCombo,
     scoredManualCandidates: scoredManualCandidates,
+    pickFillCandidate: pickFillCandidate,
     toggleResting: toggleResting,
     setResting: setResting,
     setRestCompensationEnabled: setRestCompensationEnabled,
@@ -413,6 +461,8 @@
     memberHasName: memberHasName
   };
 
+  global.Pairing = api;
+  // 調整固定配對座位：確保兩人在同一隊
   global.Pairing = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : global);

@@ -451,6 +451,14 @@
   .roster-foot button{ background:none; border:none; color:var(--faint); font-size:11.5px; text-decoration:underline; cursor:pointer; padding:6px; }
   details > summary{ list-style:none; }
   details > summary::-webkit-details-marker{ display:none; }
+  
+  /* ---- type labels ---- */
+  .roster-type-badge{
+    display:inline-block; margin-left:6px; padding:2px 6px; border-radius:6px; font-size:9px; font-weight:700;
+  }
+  .roster-type-badge.rotate{ background:var(--accent); color:var(--accent-ink); }
+  .roster-type-badge.fixed{ background:var(--danger); color:var(--danger-ink); }
+  .roster-type-badge.single{ background:var(--muted); color:var(--paper); }
 </style>
 </head>
 <body>
@@ -560,8 +568,8 @@
 <div class="overlay-backdrop" id="importOverlay" hidden>
   <div class="reset-modal" style="max-width:520px;width:100%;max-height:80vh;overflow:auto;">
     <h3>貼上名單</h3>
-    <p>每行一個輪替組別，雙人組用「/」分隔，例如：王小明 / 陳小華</p>
-    <textarea id="importText" style="width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:14px;background:var(--surface-2);color:var(--ink);" placeholder="王小明&#10;廉恩 / 詩婷"></textarea>
+    <p>每行一個輪替組別。雙人輪流用「/」分隔，例如：王小明 / 陳小華；固定同隊的雙人組在最後加上「/ [固定]」，例如：王小明 / 陳小華 / [固定]</p>
+    <textarea id="importText" style="width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:14px;background:var(--surface-2);color:var(--ink);" placeholder="王小明&#10;廉恩 / 詩婷&#10;皓昕 / 郁婷 / [固定]"></textarea>
     <div id="importPreview" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
       <label><input type="radio" name="importMode" value="new" checked> 開始新場次</label>
@@ -581,7 +589,7 @@
       <h2>管理名單</h2>
       <span class="roster-summary-inline" id="rosterSummaryInline">16 組・20 人</span>
     </div>
-    <p class="roster-hint">雙人組共用一個上場名額，兩人輪流上場，個人上場機率約為單人組的一半。刪除或新增後，正在進行的場次會自動補上空位。<br>填上性別和實力後，系統排人會優先安排「女生對女生」，湊不出來才退而求其次排「一男一女 vs 一男一女」且兩隊實力相近；資料不足或真的湊不出來時會自動退回一般公平安排，場地不會空著。<br>每次安排都會先出現建議名單，可用下拉選單人性化調整任何一位，確認無誤後按「確認，開始打」才會正式計入上場次數；開賽後也能只換掉單一位置，其他 3 人不動，換人一樣走下拉選單。不管怎麼調整，大家的上場次數都會盡量打平。<br>有人臨時不打了，不用刪除他：在「休息中」名單或這裡點「臨時不打」即可，之後安排會自動跳過這位，回來時再點「恢復」就好，上場次數也不會不見。</p>
+    <p class="roster-hint" style="display:none;">管理名單</p>
     <div class="roster-hint" style="margin:4px 18px 8px;">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
         <input type="checkbox" id="restCompToggle"> 臨時不打場數 (臨時不打的人不補他這段時間沒打到的場數)
@@ -759,6 +767,8 @@
     if(!st.profiles || typeof st.profiles !== "object") st.profiles = {};
     if(typeof st.schemaVersion !== "number") st.schemaVersion = 3;
     Roster.ensureProfiles(st);
+    // 修復舊版匯入造成的「onCourt 有值但沒有座位」等不一致狀態
+    Roster.normalizeSeats(st);
     return st;
   }
 
@@ -892,12 +902,6 @@
     }
   }
 
-  function fillSeat(court, idx){
-    var g = pickGroupForSeat();
-    if(!g){ state.courts[court][idx] = null; return; }
-    assignSeat(court, idx, pickMemberForGroup(g), true);
-  }
-
   // ---- gender / skill aware court composition ----
   // Ideal patterns: 4 known-female, or 2 known-male + 2 known-female split into
   // two 1-male/1-female teams. Falls back to plain fairness when the data or
@@ -1024,16 +1028,41 @@
     assignSeat(court, idx, pickMemberForGroup(g), false);
   }
 
+  function enforceFixedPairsSameTeamOrder(order){
+    return order;
+  }
+
   function proposeCourt(court){
     // 先釋出此場地原有四個席位（其他場地保持占用）；availableGroups 會自動排除其他場地的人。
     var best = Pairing.pickBestCourtCombo(state, Date.now());
-    if(!best){
+if(!best){
       // 可用不同組不足 4 組時，盡量補合法人選，不重複同組或同一人。
+      var persons = Pairing.collectAvailablePersons(state);
       var usedGroups = {};
       var usedMembers = {};
-      for(var i=0;i<4;i++){
-        // 找下一個可用且未用過組別的成員
-        var persons = Pairing.collectAvailablePersons(state);
+      var fixedPairs = [];
+      // 收集固定配對
+      for(var p=0;p<persons.length;p++){
+        if(persons[p].groupType === "fixed" && !usedGroups[persons[p].groupId]){
+          for(var p2=0;p2<persons.length;p2++){
+            if(p2 !== p && persons[p2].groupId === persons[p].groupId && persons[p2].groupType === "fixed"){
+              fixedPairs.push([persons[p], persons[p2]]);
+              usedGroups[persons[p].groupId] = true;
+              break;
+            }
+          }
+        }
+      }
+      var assigned = 0;
+      for(var fp=0;fp<fixedPairs.length && assigned < 4;fp++){
+        assignSeat(court, assigned, fixedPairs[fp][0].member, false);
+        assignSeat(court, assigned+1, fixedPairs[fp][1].member, false);
+        usedGroups[fixedPairs[fp][0].groupId] = true;
+        usedMembers[fixedPairs[fp][0].member.id] = true;
+        usedMembers[fixedPairs[fp][1].member.id] = true;
+        assigned += 2;
+      }
+      for(var i=assigned;i<4;i++){
         var next = null;
         for(var p=0;p<persons.length;p++){
           if(usedGroups[persons[p].groupId]) continue;
@@ -1063,17 +1092,47 @@
     });
     freeCourt(court);
     var best = Pairing.pickBestCourtCombo(state, Date.now(), Math.random(), state.pendingRejectedMemberIds.slice());
-    if(!best){
-      for(var i=0;i<4;i++){
-        var persons = Pairing.collectAvailablePersons(state);
+if(!best){
+      var persons = Pairing.collectAvailablePersons(state);
+      var usedGroups = {};
+      var usedMembers = {};
+      var fixedPairs = [];
+      // 收集固定配對
+      for(var p=0;p<persons.length;p++){
+        if(persons[p].groupType === "fixed" && !usedGroups[persons[p].groupId]){
+          // 找同群組的另一人
+          for(var p2=0;p2<persons.length;p2++){
+            if(p2 !== p && persons[p2].groupId === persons[p].groupId && persons[p2].groupType === "fixed"){
+              fixedPairs.push([persons[p], persons[p2]]);
+              usedGroups[persons[p].groupId] = true;
+              break;
+            }
+          }
+        }
+      }
+      // 優先安排固定配對到同一隊
+      var assigned = 0;
+      for(var fp=0;fp<fixedPairs.length && assigned < 4;fp++){
+        // 將固定配對放入同一隊的兩個位置
+        assignSeat(court, assigned, fixedPairs[fp][0].member, false);
+        assignSeat(court, assigned+1, fixedPairs[fp][1].member, false);
+        usedGroups[fixedPairs[fp][0].groupId] = true;
+        usedMembers[fixedPairs[fp][0].member.id] = true;
+        usedMembers[fixedPairs[fp][1].member.id] = true;
+        assigned += 2;
+      }
+      // 補充其他人
+      for(var i=assigned;i<4;i++){
         var next = null;
-        var usedGroups = {};
         for(var p=0;p<persons.length;p++){
           if(usedGroups[persons[p].groupId]) continue;
-          next = persons[p]; break;
+          if(usedMembers[persons[p].member.id]) continue;
+          next = persons[p];
+          break;
         }
         if(!next){ state.courts[court][i]=null; continue; }
         usedGroups[next.groupId]=true;
+        usedMembers[next.member.id]=true;
         assignSeat(court, i, next.member, false);
       }
     } else {
@@ -1087,13 +1146,18 @@
   // court actually get credit for a turn. If someone was swapped out of the
   // proposal before this ran, they never picked up a count for it.
   function confirmCourt(court){
-    state.courts[court].forEach(function(seat){
+    var seats = state.courts[court];
+    var membersInCourt = [];
+    seats.forEach(function(seat){
       if(!seat) return;
       var m = state.members[seat.memberId];
       if(!m) return;
       m.playCount += 1;
-      state.groupCounts[seat.groupId] += 1;
+      membersInCourt.push(m);
     });
+    // 只計算一次 groupCounts（無論有多少人上場）
+    var uniqueGroupIds = [...new Set(membersInCourt.map(function(m){ return m.groupId; }))];
+    uniqueGroupIds.forEach(function(gid){ state.groupCounts[gid] = (state.groupCounts[gid] || 0) + 1; });
     state.pending[court] = false;
     state.pendingRejectedMemberIds = [];
   }
@@ -1197,10 +1261,22 @@
     render();
   }
 
+  // 刪除人員或匯入後場上出現空位時自動補人：
+  //  - 整個場地都空了 → 重新產生一份待確認的建議名單。
+  //  - 只缺部分位置 → 其他人不動，用個人分數＋配隊分數挑最適合的人補上。
+  //    待確認名單補人不計次；進行中的場地補進來的人視同手動換人入場，立即計入上場次數。
   function refillEmptySeatsIfStarted(){
     if(!state.started) return;
     activeCourts().forEach(function(c){
-      state.courts[c].forEach(function(seat, idx){ if(!seat) fillSeat(c, idx); });
+      var filled = state.courts[c].filter(Boolean).length;
+      if(filled === 4) return;
+      if(filled === 0){ proposeCourt(c); return; }
+      var commit = !state.pending[c];
+      for(var idx=0; idx<4; idx++){
+        if(state.courts[c][idx]) continue;
+        var member = Pairing.pickFillCandidate(state, c, idx);
+        if(member) assignSeat(c, idx, member, commit);
+      }
     });
   }
 
@@ -1244,6 +1320,8 @@
     if(g.memberIds.length <= 1){ removeGroup(g.id); return; }
     clearSeatsFor(function(seat){ return seat.memberId === memberId; });
     g.memberIds = g.memberIds.filter(function(id){ return id !== memberId; });
+    // 雙人組只剩一人時改為單人組（固定雙人組少一人就無法再被安排）
+    if(g.memberIds.length === 1) g.type = "single";
     delete state.members[memberId];
   }
 
@@ -1445,7 +1523,11 @@
           tag.className = "paired-tag";
           tag.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="12" r="6" stroke="currentColor" stroke-width="2"/><circle cx="15" cy="12" r="6" stroke="currentColor" stroke-width="2"/></svg>';
           var tagText = document.createElement("span");
-          tagText.textContent = "與 " + (partner ? partner.name : "?") + " 輪流";
+          if(g.type === "fixed"){
+            tagText.textContent = "與 " + (partner ? partner.name : "?") + " 同隊";
+          } else if(g.type === "rotate"){
+            tagText.textContent = "與 " + (partner ? partner.name : "?") + " 輪流";
+          }
           tag.appendChild(tagText);
           div.appendChild(tag);
         }
@@ -1768,6 +1850,7 @@
 
       g.memberIds.forEach(function(mid){
         var m = state.members[mid];
+        if(!m) return; // Skip undefined members
         var field = document.createElement("div");
         field.className = "roster-field";
 
@@ -1873,17 +1956,112 @@
         fields.appendChild(meta);
       });
 
-      if(g.memberIds.length === 1){
-        var addPartner = document.createElement("button");
-        addPartner.type = "button";
-        addPartner.className = "add-partner-btn";
-        addPartner.textContent = "+ 新增搭檔（共用一個名額）";
-        addPartner.addEventListener("click", function(){
-          var newMid = addMemberToGroup(g.id);
+      // Remove type badge as requested - each person left side marker not needed
+      // Add unlink button for double groups
+      if(g.memberIds.length === 2 && (g.type === "fixed" || g.type === "rotate")){
+        var unlinkBtn = document.createElement("button");
+        unlinkBtn.type = "button";
+        unlinkBtn.className = "add-partner-btn";
+        unlinkBtn.textContent = "分開";
+        unlinkBtn.style.cssText = "padding:4px 10px;font-size:11px;margin-left:auto;";
+        unlinkBtn.addEventListener("click", function(){
+          // Split the group
+          var m1 = state.members[g.memberIds[0]];
+          var m2 = state.members[g.memberIds[1]];
+          if(!m1 || !m2) return;
+          var newGroupId = Roster.addGroup ? null : null;
+          // Add a new group for m2
+          var newGid = state.nextGroupId++;
+          var mid2 = g.memberIds[1];
+          var newGroup = { id: newGid, memberIds: [mid2], type: "single" };
+          state.groups.push(newGroup);
+          state.groupCounts[newGid] = state.groupCounts[g.id] || 0;
+          m2.groupId = newGid;
+          g.memberIds = [g.memberIds[0]];
+          g.type = "single";
           save();
-          renderRosterList(newMid);
+          renderRosterList();
+          render();
         });
-        fields.appendChild(addPartner);
+        fields.appendChild(unlinkBtn);
+      }
+
+      if(g.memberIds.length === 1){
+        var linkWrapper = document.createElement("div");
+        linkWrapper.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap;";
+        
+        var personSelect = document.createElement("select");
+        personSelect.style.cssText = "border:1px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:11px;flex:1;min-width:80px;";
+        var emptyOpt = document.createElement("option");
+        emptyOpt.value = "";
+        emptyOpt.textContent = "選擇另一人";
+        personSelect.appendChild(emptyOpt);
+        
+        // Collect available people not in double groups
+        state.groups.forEach(function(g2){
+          if(g2.id === g.id) return;
+          if(g2.memberIds.length >= 2) return;
+          g2.memberIds.forEach(function(mid2){
+            var m2 = state.members[mid2];
+            if(!m2 || String(m2.name||"").trim() === "") return;
+            var opt = document.createElement("option");
+            opt.value = mid2;
+            opt.textContent = m2.name || "(未命名)";
+            personSelect.appendChild(opt);
+          });
+        });
+        
+        var typeSelect = document.createElement("select");
+        typeSelect.style.cssText = "border:1px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:11px;";
+        var optFixed = document.createElement("option");
+        optFixed.value = "fixed";
+        optFixed.textContent = "雙人組";
+        optFixed.selected = true;
+        typeSelect.appendChild(optFixed);
+        var optRotate = document.createElement("option");
+        optRotate.value = "rotate";
+        optRotate.textContent = "雙人輪流";
+        typeSelect.appendChild(optRotate);
+        
+        var linkBtn = document.createElement("button");
+        linkBtn.type = "button";
+        linkBtn.className = "add-partner-btn";
+        linkBtn.textContent = "連結";
+        linkBtn.style.cssText = "padding:4px 10px;font-size:11px;";
+        linkBtn.addEventListener("click", function(){
+          var selectedMid = personSelect.value;
+          if(!selectedMid) return;
+          // Find the group of selected person
+          var targetGroup = null;
+          state.groups.forEach(function(g2){
+            if(g2.memberIds.indexOf(parseInt(selectedMid)) !== -1){
+              targetGroup = g2;
+            }
+          });
+          if(!targetGroup) return;
+          // Move selected person to this group
+          var targetMember = state.members[selectedMid];
+          if(!targetMember) return;
+          // Remove from target group
+          targetGroup.memberIds = targetGroup.memberIds.filter(function(id){ return id != parseInt(selectedMid); });
+          if(targetGroup.memberIds.length === 0){
+            // Remove empty group
+            state.groups = state.groups.filter(function(g2){ return g2.id !== targetGroup.id; });
+            delete state.groupCounts[targetGroup.id];
+          }
+          // Add to current group
+          targetMember.groupId = g.id;
+          g.memberIds.push(parseInt(selectedMid));
+          g.type = typeSelect.value;
+          save();
+          renderRosterList();
+          render();
+        });
+        
+        linkWrapper.appendChild(personSelect);
+        linkWrapper.appendChild(typeSelect);
+        linkWrapper.appendChild(linkBtn);
+        fields.appendChild(linkWrapper);
       }
 
       row.appendChild(fields);
@@ -1892,7 +2070,8 @@
       trailing.className = "roster-row-trailing";
       var countEl = document.createElement("div");
       countEl.className = "roster-count";
-      countEl.textContent = "實際 " + g.memberIds.map(function(id){ return state.members[id].playCount || 0; }).join("/") + " 次";
+      var playCounts = g.memberIds.map(function(id){ var m = state.members[id]; return m ? (m.playCount || 0) : 0; });
+      countEl.textContent = "實際 " + playCounts.join("/") + " 次";
       trailing.appendChild(countEl);
 
       var trash = document.createElement("button");
@@ -2083,12 +2262,8 @@
     var mode = (document.querySelector('input[name="importMode"]:checked') || {value:"new"}).value;
     var res = Roster.applyImport(state, parsed, mode, selections, Date.now());
     if(!res || !res.ok){ alert((res && res.errors) ? res.errors.join("；") : "匯入失敗"); return; }
-    // 更新後若有空席且已開始，補位
-    if(state.started){
-      activeCourts().forEach(function(c){
-        state.courts[c].forEach(function(seat, idx){ if(!seat) { /* propose? keep empty */ } });
-      });
-    }
+    // 「更新目前場次」後若已開始，補上因移除人員而空出的座位
+    refillEmptySeatsIfStarted();
     closeImport();
     save();
     render();

@@ -283,5 +283,136 @@ test("normalizeName", function() {
 
 test("save error helpers not required; effective playCount formatting", function() {});
 
+// K-01：固定雙人組貼上格式
+test("parse fixed pair marker", function() {
+  var p = R.parsePaste("甲 / 乙 / [固定]\n丙/丁/(固定)\n戊 / 己 / 【固定】\n庚\n辛 / 壬");
+  assert.strictEqual(p.ok, true, JSON.stringify(p.errors));
+  assert.deepStrictEqual(p.groups.map(function(g){ return g.type; }), ["fixed", "fixed", "fixed", "single", "rotate"]);
+  assert.deepStrictEqual(p.groups[0].names, ["甲", "乙"]);
+  assert.strictEqual(p.people.length, 9);
+  // 固定組只有一人、或只有標記，都要報錯
+  assert.strictEqual(R.parsePaste("甲 / [固定]").ok, false);
+  assert.strictEqual(R.parsePaste("[固定]").ok, false);
+  assert.strictEqual(R.parsePaste("甲 / 乙 / 丙 / [固定]").ok, false);
+});
+
+test("import fixed pair creates fixed group", function() {
+  var st = R.createDefaultState();
+  var parsed = R.parsePaste("甲 / 乙 / [固定]\n丙");
+  R.attachSuggestedProfiles(st, parsed);
+  assert.strictEqual(R.applyImport(st, parsed, "new", null, 1).ok, true);
+  var types = st.groups.map(function(g){ return g.type; });
+  assert.deepStrictEqual(types, ["fixed", "single"]);
+});
+
+// K-02：更新目前場次後座位與 onCourt 一致
+function seatLineup(st, court, names) {
+  names.forEach(function(nm, i) {
+    var m = membersArr(st).find(function(x){ return x.name === nm; });
+    m.onCourt = court;
+    st.courts[court][i] = { groupId: m.groupId, memberId: m.id };
+  });
+}
+function rosterText(st, skip) {
+  return st.groups.map(function(g){
+    return g.memberIds.map(function(id){ return st.members[id].name; })
+      .filter(function(n){ return (skip || []).indexOf(n) === -1; }).join(" / ");
+  }).filter(Boolean).join("\n");
+}
+function assertOnCourtConsistent(st) {
+  var seated = {};
+  ["A","B","C"].forEach(function(c){ st.courts[c].forEach(function(s){ if (s) seated[s.memberId] = c; }); });
+  membersArr(st).forEach(function(m){
+    assert.strictEqual(m.onCourt, seated[m.id] || null, m.name + " onCourt mismatch");
+  });
+  ["A","B","C"].forEach(function(c){ st.courts[c].forEach(function(s){
+    if (s) assert.strictEqual(s.groupId, st.members[s.memberId].groupId, "seat groupId stale");
+  }); });
+}
+
+test("update import keeps seats of remaining members", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  seatLineup(st, "A", ["述懷", "睿汎", "俊宏", "永謙"]);
+  var parsed = R.parsePaste(rosterText(st));
+  R.attachSuggestedProfiles(st, parsed);
+  assert.strictEqual(R.applyImport(st, parsed, "update", null, 1).ok, true);
+  assert.deepStrictEqual(st.courts.A.map(function(s){ return s && st.members[s.memberId].name; }), ["述懷", "睿汎", "俊宏", "永謙"]);
+  assertOnCourtConsistent(st);
+});
+
+test("update import clears seat of removed member only", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  seatLineup(st, "A", ["述懷", "睿汎", "俊宏", "永謙"]);
+  var parsed = R.parsePaste(rosterText(st, ["睿汎"]));
+  R.attachSuggestedProfiles(st, parsed);
+  assert.strictEqual(R.applyImport(st, parsed, "update", null, 1).ok, true);
+  assert.deepStrictEqual(st.courts.A.map(function(s){ return s && st.members[s.memberId].name; }), ["述懷", null, "俊宏", "永謙"]);
+  assertOnCourtConsistent(st);
+  // 被清空座位後，其他人仍可被安排
+  assert.ok(P.collectAvailablePersons(st).length > 0);
+});
+
+test("update import resolves new group conflicts on court", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  seatLineup(st, "A", ["述懷", "睿汎", "俊宏", "永謙"]);
+  seatLineup(st, "B", ["炫州", "四月", "Cindy", "鄧斌"]);
+  // 述懷、炫州在不同場地被改成雙人輪流 → 只保留先出現的座位；俊宏、永謙改成固定組且在同隊 → 保留
+  var text = rosterText(st, ["述懷", "炫州", "俊宏", "永謙"]) + "\n述懷 / 炫州\n俊宏 / 永謙 / [固定]";
+  var parsed = R.parsePaste(text);
+  R.attachSuggestedProfiles(st, parsed);
+  assert.strictEqual(R.applyImport(st, parsed, "update", null, 1).ok, true);
+  var nameAt = function(c){ return st.courts[c].map(function(s){ return s && st.members[s.memberId].name; }); };
+  assert.deepStrictEqual(nameAt("A"), ["述懷", "睿汎", "俊宏", "永謙"]);
+  assert.deepStrictEqual(nameAt("B"), [null, "四月", "Cindy", "鄧斌"]);
+  assertOnCourtConsistent(st);
+});
+
+test("normalizeSeats clears fixed pair split across teams and repairs stuck onCourt", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  seatLineup(st, "A", ["述懷", "睿汎", "俊宏", "永謙"]);
+  // 把述懷、俊宏（不同隊）設成固定組
+  var a = membersArr(st).find(function(m){ return m.name === "述懷"; });
+  var b = membersArr(st).find(function(m){ return m.name === "俊宏"; });
+  var gB = st.groups.find(function(g){ return g.id === b.groupId; });
+  var gA = st.groups.find(function(g){ return g.id === a.groupId; });
+  st.groups = st.groups.filter(function(g){ return g !== gB; });
+  gA.memberIds.push(b.id); gA.type = "fixed"; b.groupId = gA.id;
+  // 另有一位被卡在場上但沒有座位的人
+  membersArr(st).find(function(m){ return m.name === "Cindy"; }).onCourt = "B";
+  R.normalizeSeats(st);
+  assert.deepStrictEqual(st.courts.A.map(function(s){ return s && st.members[s.memberId].name; }), [null, "睿汎", null, "永謙"]);
+  assertOnCourtConsistent(st);
+});
+
+// K-03：自動補位挑人
+test("pickFillCandidate uses scoring and skips fixed pairs and resting", function() {
+  var st = R.createDefaultState(); P.ensureStateFields(st);
+  seatLineup(st, "A", ["述懷", "睿汎", "俊宏"]);
+  membersArr(st).forEach(function(m){ m.playCount = 3; });
+  // 永謙場數最少 → 應被選中；但先把他設為臨時不打，再把炫州、四月設為固定組
+  var low = membersArr(st).find(function(m){ return m.name === "永謙"; });
+  low.playCount = 0;
+  var pick = P.pickFillCandidate(st, "A", 3);
+  assert.strictEqual(pick.name, "永謙");
+  P.setResting(st, low.id, true);
+  var x = membersArr(st).find(function(m){ return m.name === "炫州"; });
+  var y = membersArr(st).find(function(m){ return m.name === "四月"; });
+  x.playCount = 0; y.playCount = 0;
+  var gx = st.groups.find(function(g){ return g.id === x.groupId; });
+  st.groups = st.groups.filter(function(g){ return g.id !== y.groupId; });
+  gx.memberIds.push(y.id); gx.type = "fixed"; y.groupId = gx.id;
+  pick = P.pickFillCandidate(st, "A", 3);
+  assert.ok(pick && ["永謙", "炫州", "四月"].indexOf(pick.name) === -1, "picked " + (pick && pick.name));
+});
+
+test("removeMember turns remaining pair member into single", function() {
+  var st = R.createDefaultState();
+  var g = st.groups.find(function(g){ return g.memberIds.length === 2; });
+  g.type = "fixed";
+  R.removeMember(st, g.memberIds[1]);
+  assert.strictEqual(g.memberIds.length, 1);
+  assert.strictEqual(g.type, "single");
+});
+
 console.log("Passed:", passed);
 process.exit(0);
