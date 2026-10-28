@@ -214,6 +214,57 @@
     return m.id;
   }
 
+  // ---- 雙人組合變更（切換類型、連結、分開）----
+  // 隨時都可以改，包括成員正在場上（含待確認名單）時：目前座位一律保留不動，
+  // 新的組合只影響之後的選人（場上的人下場後才依新組合安排）。
+  function findGroup(state, groupId) {
+    return (state.groups || []).filter(function (gg) { return gg.id === groupId; })[0] || null;
+  }
+
+  // 切換雙人組類型：fixed（雙人組，同隊上場）⇄ rotate（雙人輪流，共用名額）。
+  function setPairType(state, groupId, type) {
+    if (type !== "fixed" && type !== "rotate") return false;
+    var g = findGroup(state, groupId);
+    if (!g || g.memberIds.length !== 2) return false;
+    g.type = type;
+    return true;
+  }
+
+  // 連結：把另一位單人組成員併入 groupId 這個單人組，成為 type 類型的雙人組；被併入者原本的組別刪除。
+  function linkMembers(state, groupId, memberId, type) {
+    if (type !== "fixed" && type !== "rotate") return false;
+    var g = findGroup(state, groupId);
+    var m = state.members[memberId];
+    if (!g || g.memberIds.length !== 1 || !m || m.groupId === groupId) return false;
+    var from = findGroup(state, m.groupId);
+    if (!from || from.memberIds.length !== 1) return false;
+    state.groups = state.groups.filter(function (gg) { return gg.id !== from.id; });
+    if (state.groupCounts) delete state.groupCounts[from.id];
+    m.groupId = g.id;
+    g.memberIds.push(m.id);
+    g.type = type;
+    normalizeSeats(state);
+    return true;
+  }
+
+  // 分開：雙人組拆成兩個單人組，第二位成員移到新組別（沿用原組別的組別輪替次數）。
+  function splitPair(state, groupId) {
+    var g = findGroup(state, groupId);
+    if (!g || g.memberIds.length !== 2) return false;
+    var mid2 = g.memberIds[1];
+    var m2 = state.members[mid2];
+    if (!m2) return false;
+    var newGid = state.nextGroupId++;
+    state.groups.push({ id: newGid, memberIds: [mid2], type: "single" });
+    if (!state.groupCounts) state.groupCounts = {};
+    state.groupCounts[newGid] = state.groupCounts[g.id] || 0;
+    m2.groupId = newGid;
+    g.memberIds = [g.memberIds[0]];
+    g.type = "single";
+    normalizeSeats(state);
+    return true;
+  }
+
   // 從過去名單刪除一位人員設定檔（使用者明確刪除時才會刪）。仍在目前名單中的人不能刪，回傳 false。
   function deleteProfile(state, profileKey) {
     if (!state.profiles || !state.profiles[profileKey]) return false;
@@ -331,37 +382,24 @@
 
   // 讓場上座位與名單一致：
   //  1. 成員或其組別已不存在 → 清空座位；座位的 groupId 一律改成成員目前的 groupId。
-  //  2. 非固定組同時有多人在場上 → 只保留第一個座位（依 A、B、C 場地及座位順序）。
-  //  3. 固定雙人組兩人都在場上，但不在同一場地的同一隊 → 兩個座位都清空。
-  //  4. 依座位重建每位成員的 onCourt，避免有人被標記在場上卻沒有座位而永遠排不到。
+  //  2. 同一人同時佔兩個座位 → 只保留第一個（依 A、B、C 場地及座位順序）。
+  //  3. 依座位重建每位成員的 onCourt，避免有人被標記在場上卻沒有座位而永遠排不到。
+  // 組別關係改變（切換類型、連結、分開、匯入）造成的「同組多人在場上」「固定組不同隊」不清座位：
+  // 目前場上的配隊保留不動，新組合只影響之後的選人。
   function normalizeSeats(state) {
     var groupMap = {};
     (state.groups || []).forEach(function (g) { groupMap[g.id] = g; });
     var courtLetters = ["A", "B", "C"];
-    var seatsByGroup = {};
+    var seated = {};
     courtLetters.forEach(function (c) {
       if (!state.courts[c]) state.courts[c] = [null, null, null, null];
-      state.courts[c] = state.courts[c].map(function (seat, idx) {
+      state.courts[c] = state.courts[c].map(function (seat) {
         if (!seat) return null;
         var m = state.members[seat.memberId];
-        if (!m || !groupMap[m.groupId]) return null;
-        if (!seatsByGroup[m.groupId]) seatsByGroup[m.groupId] = [];
-        seatsByGroup[m.groupId].push({ court: c, idx: idx });
+        if (!m || !groupMap[m.groupId] || seated[m.id]) return null;
+        seated[m.id] = true;
         return { groupId: m.groupId, memberId: m.id };
       });
-    });
-    Object.keys(seatsByGroup).forEach(function (gid) {
-      var spots = seatsByGroup[gid];
-      if (spots.length < 2) return;
-      var toClear;
-      if (groupMap[gid].type === "fixed") {
-        var sameTeam = spots.length === 2 && spots[0].court === spots[1].court
-          && Math.floor(spots[0].idx / 2) === Math.floor(spots[1].idx / 2);
-        toClear = sameTeam ? [] : spots;
-      } else {
-        toClear = spots.slice(1);
-      }
-      toClear.forEach(function (s) { state.courts[s.court][s.idx] = null; });
     });
     Object.keys(state.members || {}).forEach(function (id) {
       if (state.members[id]) state.members[id].onCourt = null;
@@ -794,6 +832,9 @@
     pastProfiles: pastProfiles,
     addMemberFromProfile: addMemberFromProfile,
     deleteProfile: deleteProfile,
+    setPairType: setPairType,
+    linkMembers: linkMembers,
+    splitPair: splitPair,
     buildProfilesFromMembers: buildProfilesFromMembers,
     parsePaste: parsePaste,
     attachSuggestedProfiles: attachSuggestedProfiles,

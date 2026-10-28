@@ -117,11 +117,9 @@ ensureStateFields 對缺少 type 的組別補 "single"；migrateV2 補 "rotate"�
       - 不改 started 與 pending；index.html 在 applyImport 成功後呼叫 refillEmptySeatsIfStarted 補空位（見六）。
    C. 匯入對話框說明文字與 placeholder 列出單人、雙人輪流、固定雙人組三種寫法。
    D. 原子性：parse 與預覽不改 state；按「確認匯入」後才呼叫 applyImport 並 save。取消或點背景關閉不做任何修改。
-5. normalizeSeats(state)（roster.js，匯入更新後與 load 時呼叫）
-   a. 對 A/B/C 每個座位：成員不存在或其 groupId 對應的組別不存在 → null；否則 seat.groupId 改為 member.groupId。
-   b. 依組別彙整在場座位：
-      - 非 fixed 組有 2 個以上座位 → 依 A、B、C 及座位順序保留第一個，其餘清空。
-      - fixed 組有 2 個座位但不在同一場地、或不同隊（floor(idx/2) 不同）→ 兩個都清空；只有一人在場上則保留。
+5. normalizeSeats(state)（roster.js，匯入更新、linkMembers、splitPair 後與 load 時呼叫）
+   a. 對 A/B/C 每個座位：成員不存在、其 groupId 對應的組別不存在、或此人已出現在前面的座位 → null；否則 seat.groupId 改為 member.groupId。
+   b. 不檢查組別規則（同組多人在場上、固定組不同隊）：目前配隊保留，組別規則只在之後選人時套用。
    c. 所有成員 onCourt=null，再依座位設定 onCourt。
 
 四、可用人選與候選列舉（規則見 requirements ALG-02、ALG-03）
@@ -286,6 +284,12 @@ var SCORE = {
        顏色：fixed 用 --court-c／--court-c-ink（橘），rotate 用 --court-a／--court-a-ink（藍），兩者在深色模式都有對應值。
        場上座位：.paired-tag 加同名 class 上色，圖示同 PAIR_ICONS，文字「與 X 同隊」或「與 X 輪流」。
        「分開」按鈕顯示條件改為 memberIds.length === 2（不再限定 type）。
+       次數：單人卡片 .roster-row-trailing 內 .roster-count「實際 N 次」；雙人卡片不在右上角顯示次數，改在每位成員的 .roster-field 尾端加 .member-count「實際 N 次」。
+       雙人卡片底部 .pair-actions：.pair-switch（目標類型 class 上色，PAIR_ICONS 圖示＋「改成雙人組／改成雙人輪流」）＋「分開」。
+   - 雙人組合變更（roster.js；成功後 index.html save、renderRosterList、render；都不改座位）：
+       Roster.setPairType(state, groupId, type)：type 須為 fixed／rotate、組別須剛好兩人，否則 false；不檢查成員是否在場上。
+       Roster.linkMembers(state, groupId, memberId, type)：groupId 須為單人組、memberId 須屬於另一個單人組；併入後刪除對方原組別與其 groupCounts，設定 type，呼叫 normalizeSeats。
+       Roster.splitPair(state, groupId)：第二位成員移到新單人組（沿用 groupCounts），原組改為 single，呼叫 normalizeSeats。
    - 「詳細統計」：<details> 預設收合（展開狀態只存在記憶體）；顯示「現在時間」（每秒更新）及每人：有效場數（2 位小數）、實際上場、已結算不打場數、目前不打場數、下場時間（或「未記錄」）、性別/實力。
    - 名單面板每組顯示「實際 a/b 次」。
 2. 載入順序 load()：badminton_rotation_v3 → badminton_rotation_v2（Roster.migrateV2）→ badminton_rotation_v1（Roster.migrateV1）→ 預設名單。任何解析例外都回到預設名單。載入後 normalizeMembers 補齊欄位（含 pendingRejectedMemberIds、settings、profiles、組別 type），並呼叫 Roster.normalizeSeats 修復座位與 onCourt 不一致的資料。
@@ -296,7 +300,7 @@ var SCORE = {
 
 九、測試（tests/run.js，`node tests/run.js`）
 
-目前 31 項，全部通過：
+目前 33 項，全部通過：
 1. 個人分數邊界（平均 3，count 1.9 / 2 / 2.49 / 2.5 / 3.5 / 3.6 / 4 / 4.01）。
 2. 近期下場 119,999 ms 扣分、120,000 ms 不扣。
 3. 性別加分：FFFF、2M2F 混雙、2M2F 非混雙、性別未知。
@@ -319,8 +323,8 @@ var SCORE = {
 20. 匯入固定雙人組建立 fixed 組別。
 21. 更新匯入後留下的人保留座位，onCourt 與 seat.groupId 一致。
 22. 更新匯入只清空被移除者的座位。
-23. 更新匯入改變組別關係時的座位衝突處理（輪流組跨場、固定組同隊）。
-24. normalizeSeats 清除拆在兩隊的固定組，並修復被卡住的 onCourt。
+23. 更新匯入改變組別關係（輪流組跨場、固定組）時，場上座位全部保留。
+24. normalizeSeats 保留組別變更後的座位、清除同一人重複的座位，並修復被卡住的 onCourt。
 25. pickFillCandidate 依評分選人，排除臨時不打與固定組成員。
 26. removeMember 後剩一人的組別改為 single。
 27. adjustRestCredit：+0.5／−0.5、下限 0、系統起始補償可扣到 0、開關關閉不調整。
@@ -328,6 +332,8 @@ var SCORE = {
 29. ensureStateFields 把負的 restCreditTotal 改為 0。
 30. pastProfiles 只列不在目前名單中的設定檔；addMemberFromProfile 以單人加入並帶入性別／實力，重複或不存在時回傳 null。
 31. deleteProfile 刪除過去名單設定檔；目前名單中的人或不存在的 key 回傳 false。
+32. setPairType 雙人組 ⇄ 雙人輪流，兩人都在場上也可切換且座位不變；單人組與未知類型拒絕。
+33. linkMembers／splitPair 不改場上座位；場上成員的同組搭檔暫不可被安排，下場後才可；不合法的連結回傳 false。
 
 refillEmptySeatsIfStarted 位於 index.html，無單元測試；已於瀏覽器手動驗證：待確認名單刪人補位不計次、進行中場地補位 +1、更新匯入後座位保留並補位。
 

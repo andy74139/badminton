@@ -517,6 +517,15 @@
   .pair-badge svg{ flex:none; }
   .pair-badge.fixed{ background:var(--court-c); color:var(--court-c-ink); }
   .pair-badge.rotate{ background:var(--court-a); color:var(--court-a-ink); }
+  .pair-actions{ display:flex; justify-content:flex-end; align-items:center; gap:6px; flex-wrap:wrap; }
+  .pair-switch{
+    display:inline-flex; align-items:center; gap:4px; cursor:pointer;
+    background:var(--surface); border:1px solid; border-radius:8px; padding:4px 10px; font-size:11px; font-weight:700;
+  }
+  .pair-switch.fixed{ color:var(--court-c); border-color:var(--court-c); }
+  .pair-switch.rotate{ color:var(--court-a); border-color:var(--court-a); }
+  .pair-switch:active{ transform: scale(0.96); }
+  .roster-field .member-count{ margin-left:auto; flex:none; white-space:nowrap; }
   .seat .paired-tag.fixed{ color:var(--court-c); font-weight:700; }
   .seat .paired-tag.rotate{ color:var(--court-a); font-weight:700; }
 </style>
@@ -2111,6 +2120,12 @@ if(!best){
             render();
           });
           field.appendChild(x);
+
+          // 雙人卡片：每人的實際上場次數顯示在自己那一行
+          var memberCount = document.createElement("span");
+          memberCount.className = "roster-count member-count";
+          memberCount.textContent = "實際 " + (m.playCount || 0) + " 次";
+          field.appendChild(memberCount);
         }
 
         fields.appendChild(field);
@@ -2173,33 +2188,43 @@ if(!best){
         fields.appendChild(meta);
       });
 
-      // 雙人組都可「分開」（含缺少 type 的舊資料雙人組）
+      // 雙人卡片底部動作列：切換類型（雙人組 ⇄ 雙人輪流）、分開（含缺少 type 的舊資料雙人組）
       if(g.memberIds.length === 2){
-        var unlinkBtn = document.createElement("button");
-        unlinkBtn.type = "button";
-        unlinkBtn.className = "add-partner-btn";
-        unlinkBtn.textContent = "分開";
-        unlinkBtn.style.cssText = "padding:4px 10px;font-size:11px;margin-left:auto;";
-        unlinkBtn.addEventListener("click", function(){
-          // Split the group
-          var m1 = state.members[g.memberIds[0]];
-          var m2 = state.members[g.memberIds[1]];
-          if(!m1 || !m2) return;
-          var newGroupId = Roster.addGroup ? null : null;
-          // Add a new group for m2
-          var newGid = state.nextGroupId++;
-          var mid2 = g.memberIds[1];
-          var newGroup = { id: newGid, memberIds: [mid2], type: "single" };
-          state.groups.push(newGroup);
-          state.groupCounts[newGid] = state.groupCounts[g.id] || 0;
-          m2.groupId = newGid;
-          g.memberIds = [g.memberIds[0]];
-          g.type = "single";
+        var pairActions = document.createElement("div");
+        pairActions.className = "pair-actions";
+
+        var target = pairType === "fixed" ? "rotate" : "fixed";
+        var switchBtn = document.createElement("button");
+        switchBtn.type = "button";
+        switchBtn.className = "pair-switch " + target;
+        switchBtn.innerHTML = PAIR_ICONS[target];
+        var switchText = document.createElement("span");
+        switchText.textContent = target === "fixed" ? "改成雙人組" : "改成雙人輪流";
+        switchBtn.appendChild(switchText);
+        switchBtn.title = (target === "fixed" ? "改成雙人組：兩人一起上場、同隊" : "改成雙人輪流：兩人共用一個名額、輪流上場")
+          + "（場上目前的配隊不變，之後的安排才套用）";
+        switchBtn.addEventListener("click", function(){
+          if(!Roster.setPairType(state, g.id, target)) return;
           save();
           renderRosterList();
           render();
         });
-        fields.appendChild(unlinkBtn);
+        pairActions.appendChild(switchBtn);
+
+        var unlinkBtn = document.createElement("button");
+        unlinkBtn.type = "button";
+        unlinkBtn.className = "add-partner-btn";
+        unlinkBtn.textContent = "分開";
+        unlinkBtn.style.cssText = "padding:4px 10px;font-size:11px;";
+        unlinkBtn.title = "拆成兩個單人（場上目前的配隊不變，之後的安排才套用）";
+        unlinkBtn.addEventListener("click", function(){
+          if(!Roster.splitPair(state, g.id)) return;
+          save();
+          renderRosterList();
+          render();
+        });
+        pairActions.appendChild(unlinkBtn);
+        fields.appendChild(pairActions);
       }
 
       if(g.memberIds.length === 1){
@@ -2244,31 +2269,11 @@ if(!best){
         linkBtn.className = "add-partner-btn";
         linkBtn.textContent = "連結";
         linkBtn.style.cssText = "padding:4px 10px;font-size:11px;";
+        linkBtn.title = "組成雙人（場上目前的配隊不變，之後的安排才套用）";
         linkBtn.addEventListener("click", function(){
-          var selectedMid = personSelect.value;
+          var selectedMid = parseInt(personSelect.value, 10);
           if(!selectedMid) return;
-          // Find the group of selected person
-          var targetGroup = null;
-          state.groups.forEach(function(g2){
-            if(g2.memberIds.indexOf(parseInt(selectedMid)) !== -1){
-              targetGroup = g2;
-            }
-          });
-          if(!targetGroup) return;
-          // Move selected person to this group
-          var targetMember = state.members[selectedMid];
-          if(!targetMember) return;
-          // Remove from target group
-          targetGroup.memberIds = targetGroup.memberIds.filter(function(id){ return id != parseInt(selectedMid); });
-          if(targetGroup.memberIds.length === 0){
-            // Remove empty group
-            state.groups = state.groups.filter(function(g2){ return g2.id !== targetGroup.id; });
-            delete state.groupCounts[targetGroup.id];
-          }
-          // Add to current group
-          targetMember.groupId = g.id;
-          g.memberIds.push(parseInt(selectedMid));
-          g.type = typeSelect.value;
+          if(!Roster.linkMembers(state, g.id, selectedMid, typeSelect.value)) return;
           save();
           renderRosterList();
           render();
@@ -2284,11 +2289,14 @@ if(!best){
 
       var trailing = document.createElement("div");
       trailing.className = "roster-row-trailing";
-      var countEl = document.createElement("div");
-      countEl.className = "roster-count";
-      var playCounts = g.memberIds.map(function(id){ var m = state.members[id]; return m ? (m.playCount || 0) : 0; });
-      countEl.textContent = "實際 " + playCounts.join("/") + " 次";
-      trailing.appendChild(countEl);
+      // 單人卡片的次數放右上角；雙人卡片改為每人一行（見上方 member-count）
+      if(g.memberIds.length === 1){
+        var countEl = document.createElement("div");
+        countEl.className = "roster-count";
+        var only = state.members[g.memberIds[0]];
+        countEl.textContent = "實際 " + (only ? (only.playCount || 0) : 0) + " 次";
+        trailing.appendChild(countEl);
+      }
 
       var trash = document.createElement("button");
       trash.type = "button";
