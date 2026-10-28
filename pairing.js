@@ -19,7 +19,14 @@
     REST_CREDIT_PER_STEP: 0.5,
     MIN_REST_AVERAGE_BASELINE: 1,
     // 統計區「優先↑／優先↓」每按一次調整的不打場數
-    MANUAL_PRIORITY_STEP: 0.5
+    MANUAL_PRIORITY_STEP: 0.5,
+    // 分層隨機（整場選人、系統換人、補位共用）：x = 最高分
+    //  每組候選的權重依「與最高分的差距」：x、x−1、x−2 分別 10、3、1（陣列長度即範圍，x−3 以下不抽）
+    //  範圍 2 分 < 剛下場扣分 3 分：剛下場的人不會因隨機勝過條件相同、沒剛下場的人；加大範圍時要一起檢查。
+    RANDOM_TIER_WEIGHTS: [10, 3, 1],
+    // 防稀釋上限：x−2 層最多佔下兩層（x−1 + x−2）的 1/4；下兩層合計最多 1/3（即 x 層至少 2/3）
+    RANDOM_LOWEST_MAX_SHARE_OF_LOWER: 1 / 4,
+    RANDOM_LOWER_MAX_SHARE: 1 / 3
   };
 
   function nowMs() { return Date.now(); }
@@ -59,6 +66,12 @@
 
   // 個人公平分數
   function individualScore(member, state, avgEff, now) {
+    return individualScoreDetail(member, state, avgEff, now).total;
+  }
+
+  // 個人分數細項（配隊 log 也用這份，確保顯示與實際評分一致）：
+  // { effective 有效場數, diff 與平均差, fairness 公平分, recent 剛下場扣分, sinceFinishMs 距下場毫秒, total }
+  function individualScoreDetail(member, state, avgEff, now) {
     var avg = (avgEff === undefined || avgEff === null) ? avgEffectivePlayCount(state) : avgEff;
     var count = effectivePlayCount(member, state);
     var fairnessScore;
@@ -74,16 +87,19 @@
       fairnessScore = 0;
     }
     var t = (now === undefined || now === null) ? nowMs() : now;
-    var recentlyFinished = member.lastFinishedAt != null
-      && (t - member.lastFinishedAt >= 0)
-      && (t - member.lastFinishedAt < SCORE.RECENT_FINISH_MS);
-    return fairnessScore + (recentlyFinished ? SCORE.RECENT_FINISH_PENALTY : 0);
+    var since = member.lastFinishedAt != null ? t - member.lastFinishedAt : null;
+    var recentlyFinished = since != null && since >= 0 && since < SCORE.RECENT_FINISH_MS;
+    var recent = recentlyFinished ? SCORE.RECENT_FINISH_PENALTY : 0;
+    return { effective: count, diff: count - avg, fairness: fairnessScore, recent: recent, sinceFinishMs: since, total: fairnessScore + recent };
   }
 
   var PAIRINGS = [[[0, 1], [2, 3]], [[0, 2], [1, 3]], [[0, 3], [1, 2]]];
 
-  // 性別加分（依 split）
-  function genderBonusForSplit(people, split) {
+  // 配隊分（依 split）：優先安排這兩種組合
+  //  - 全女生（四人都是女）：+ALL_FEMALE_BONUS，任何分隊方式都成立
+  //  - 男女配隊（男+女 vs 男+女）：+MIXED_DOUBLE_BONUS，必須兩隊各一男一女
+  //  任何一人性別未設定 → 0。整場選人與單一位置選人都用這個函式。
+  function pairingBonusForSplit(people, split) {
     // people: 4 members; split: [[i,i],[i,i]]
     var allKnown = people.every(function (p) { return p.gender === "M" || p.gender === "F"; });
     if (!allKnown) return 0;
@@ -91,7 +107,6 @@
     var fCount = people.filter(function (p) { return p.gender === "F"; }).length;
     var mCount = people.filter(function (p) { return p.gender === "M"; }).length;
     if (!(mCount === 2 && fCount === 2)) return 0;
-    // 混雙：兩隊各自一男一女
     function mixed(teamIdx) {
       var a = people[split[teamIdx][0]], b = people[split[teamIdx][1]];
       return a.gender !== b.gender;
@@ -111,8 +126,9 @@
     return SCORE.SKILL_DIFF_3_OR_MORE;
   }
 
+  // 分隊分數 = 配隊分 + 實力分
   function pairingScoreForSplit(people, split) {
-    return genderBonusForSplit(people, split) + skillPenaltyForSplit(people, split);
+    return pairingBonusForSplit(people, split) + skillPenaltyForSplit(people, split);
   }
 
   // 所有分組：回傳所有合規的分組及分數
@@ -142,6 +158,82 @@
     return out;
   }
 
+  // ---- 分層隨機 ----
+  // 依與最高分 x 的差距分層：差距 0 → 第 0 層（x）、(0, 1] → 第 1 層（x−1）、(1, 2] → 第 2 層（x−2），更低不抽。
+  function tierOfScore(score, best) {
+    var diff = best - score;
+    var maxTier = SCORE.RANDOM_TIER_WEIGHTS.length - 1;
+    for (var k = 0; k <= maxTier; k++) { if (diff <= k + 1e-9) return k; }
+    return -1;
+  }
+
+  // 各層總機率。counts[k] = 第 k 層的候選數（第 0 層至少 1 個）。
+  //  1. 原始權重 W_k = counts[k] × RANDOM_TIER_WEIGHTS[k]
+  //  2. 第 1 層有候選時，第 2 層最多佔第 1、2 層合計的 RANDOM_LOWEST_MAX_SHARE_OF_LOWER（1/4）
+  //  3. 第 1、2 層合計最多佔全部的 RANDOM_LOWER_MAX_SHARE（1/3），超過時兩層等比例縮小
+  //  只會壓低下層、不會抬高，所以任何一個高分層候選的機率都 ≥ 任何一個低分層候選。
+  // 回傳 { counts, shares（各層總機率）, perCandidate（各層每個候選的機率）, capLowest, capLower }
+  function tierShares(counts) {
+    var w = SCORE.RANDOM_TIER_WEIGHTS;
+    var W = w.map(function (wk, k) { return (counts[k] || 0) * wk; });
+    var capLowest = false, capLower = false;
+    if (W.length > 2 && (counts[1] || 0) > 0) {
+      var q = SCORE.RANDOM_LOWEST_MAX_SHARE_OF_LOWER;
+      var maxW2 = W[1] * q / (1 - q);
+      if (W[2] > maxW2 + 1e-12) { W[2] = maxW2; capLowest = true; }
+    }
+    var lower = W.slice(1).reduce(function (a, b) { return a + b; }, 0);
+    var p = SCORE.RANDOM_LOWER_MAX_SHARE;
+    var maxLower = W[0] * p / (1 - p);
+    if (lower > maxLower + 1e-12) {
+      var f = maxLower / lower;
+      for (var k = 1; k < W.length; k++) W[k] *= f;
+      capLower = true;
+    }
+    var sum = W.reduce(function (a, b) { return a + b; }, 0);
+    var shares = W.map(function (x) { return sum > 0 ? x / sum : 0; });
+    var perCandidate = shares.map(function (s, k) { return counts[k] ? s / counts[k] : 0; });
+    return { counts: w.map(function (_, k) { return counts[k] || 0; }), shares: shares, perCandidate: perCandidate, capLowest: capLowest, capLower: capLower };
+  }
+
+  // 分層抽籤：items 為候選陣列，scoreOf(item) 取總分。每個 item 會被寫入 tier（−1 表示不抽）與 probability。
+  // 只用一次 rng()：先依層總機率選層，再把同一個隨機數換算成層內位置（層內均分）。
+  // enabled === false（設定「分層隨機」關閉）時只在最高分 x 中均分隨機，x−1、x−2 機率為 0（tier 仍標示，方便 log 對照）。
+  // 回傳 { chosen, best, tiers（tierShares 結果，加 enabled）, draw }
+  function pickTiered(items, scoreOf, rng, enabled) {
+    if (typeof rng !== "function") rng = Math.random;
+    var best = -Infinity;
+    items.forEach(function (it) { var s = scoreOf(it); if (s > best) best = s; });
+    var layers = SCORE.RANDOM_TIER_WEIGHTS.map(function () { return []; });
+    items.forEach(function (it) {
+      it.tier = tierOfScore(scoreOf(it), best);
+      if (it.tier >= 0) layers[it.tier].push(it);
+    });
+    var on = enabled !== false;
+    var tiers = tierShares(layers.map(function (l, k) { return (on || k === 0) ? l.length : 0; }));
+    tiers.enabled = on;
+    tiers.layerSizes = layers.map(function (l) { return l.length; });
+    items.forEach(function (it) { it.probability = it.tier >= 0 ? tiers.perCandidate[it.tier] : 0; });
+    var draw = rng();
+    var acc = 0, chosen = null;
+    for (var k = 0; k < layers.length && !chosen; k++) {
+      var share = tiers.shares[k];
+      if (!layers[k].length || share <= 0) continue;
+      if (draw < acc + share || k === layers.length - 1) {
+        var u = Math.min(Math.max((draw - acc) / share, 0), 0.999999999);
+        chosen = layers[k][Math.floor(u * layers[k].length)];
+      }
+      acc += share;
+    }
+    if (!chosen) chosen = layers[0][layers[0].length - 1];
+    return { chosen: chosen, best: best, tiers: tiers, draw: draw };
+  }
+
+  // 設定「分層隨機」是否開啟（預設開啟）
+  function tieredRandomEnabled(state) {
+    return !(state && state.settings && state.settings.tieredRandomEnabled === false);
+  }
+
   function pickBestCourtCombo(state, now, rng, rejectedIds) {
     if (typeof rng !== "function") rng = Math.random;
     if (!Array.isArray(rejectedIds)) rejectedIds = [];
@@ -151,8 +243,9 @@
     var avgEff = avgEffectivePlayCount(state);
     var t = (now === undefined || now === null) ? nowMs() : now;
     var combos = combinationsIndices(persons.length, 4);
-    var bestScore = -Infinity;
-    var bestCombos = [];
+    // 抽籤單位是「四人組合」：每組四人只用自己總分最高的分法；同分的分法留在 tiedSplits，選中後再均分抽一種。
+    var comboCandidates = [];
+    var splitsEvaluated = 0;
     for (var comboIdx = 0; comboIdx < combos.length; comboIdx++) {
       var ci = combos[comboIdx];
       var four = ci.map(function (i) { return persons[i]; });
@@ -187,6 +280,7 @@
       var sumInd = people.reduce(function (s, m) { return s + individualScore(m, state, avgEff, t); }, 0);
       var allSplits = allSplitsForFour(people);
       if(!allSplits.length) continue;
+      var comboBest = null;
       for(var spIdx=0;spIdx<allSplits.length;spIdx++){
         var sp = allSplits[spIdx];
         // 固定雙人組必須在同一隊（seatMembers 的前兩位是一隊、後兩位是另一隊）。
@@ -208,34 +302,66 @@
         var rp = 0;
         for(var rpi=0;rpi<people.length;rpi++){ if(rejectedIds.indexOf(people[rpi].id) !== -1) rp += SCORE.REJECTED_PERSON_PENALTY; }
         var total = sumInd + sp.pairingScore + rp;
-        var rec = { persons: four, people: people, seatMembers: sp.seatMembers, pairingScore: sp.pairingScore, split: sp.split, score: total, rand: rng() };
-        if (total > bestScore) {
-          bestScore = total;
-          bestCombos = [rec];
-        } else if (total === bestScore) {
-          bestCombos.push(rec);
+        var rec = {
+          persons: four, people: people, seatMembers: sp.seatMembers, pairingScore: sp.pairingScore, split: sp.split, score: total,
+          // 細項（給配隊 log）
+          individualSum: sumInd, pairingBonus: pairingBonusForSplit(people, sp.split), skillPenalty: skillPenaltyForSplit(people, sp.split), rejectedPenalty: rp
+        };
+        splitsEvaluated++;
+        if (!comboBest || total > comboBest.score) {
+          comboBest = rec;
+          rec.tiedSplits = [rec];
+        } else if (total === comboBest.score) {
+          comboBest.tiedSplits.push(rec);
         }
       }
-      continue;
+      if (comboBest) comboCandidates.push(comboBest);
     }
-    if (!bestCombos.length) return null;
-    var chosen;
-    var TEMP = 1.5;
-    var weights = bestCombos.map(function (rec) {
-      return Math.exp((rec.score - bestScore) / TEMP);
-    });
-    var sum = weights.reduce(function (a, b) { return a + b; }, 0);
-    var r = rng() * sum;
-    var acc = 0;
-    for (var i = 0; i < bestCombos.length; i++) {
-      acc += weights[i];
-      if (r <= acc) {
-        chosen = bestCombos[i];
-        break;
-      }
+    if (!comboCandidates.length) return null;
+    var pick = pickTiered(comboCandidates, function (c) { return c.score; }, rng, tieredRandomEnabled(state));
+    var comboRec = pick.chosen;
+    // 這組四人有多種同分最佳分法時，均分抽一種
+    var ties = comboRec.tiedSplits;
+    var chosen = ties.length > 1 ? ties[Math.min(ties.length - 1, Math.floor(rng() * ties.length))] : comboRec;
+    if (chosen !== comboRec) {
+      chosen.tier = comboRec.tier;
+      chosen.probability = comboRec.probability;
+      chosen.tiedSplits = ties;
+      comboCandidates[comboCandidates.indexOf(comboRec)] = chosen;
     }
-    if (!chosen) chosen = bestCombos[bestCombos.length - 1];
+    chosen.splitProbability = 1 / ties.length;
+    chosen.debug = buildPickDebug(state, persons, comboCandidates, splitsEvaluated, pick, chosen, avgEff, t, rejectedIds);
     return chosen;
+  }
+
+  // 配隊 log 顯示前幾名候選
+  var DEBUG_TOP_N = 30;
+
+  // 整理這次選人的說明資料：可用球友的個人分數細項、前 DEBUG_TOP_N 名四人組合（含層與機率）、各層摘要、統計數字。
+  function buildPickDebug(state, persons, comboCandidates, splitsEvaluated, pick, chosen, avgEff, now, rejectedIds) {
+    var ranked = comboCandidates.slice().sort(function (a, b) { return b.score - a.score; });
+    var top = ranked.slice(0, DEBUG_TOP_N);
+    if (top.indexOf(chosen) === -1) top.push(chosen);
+    return {
+      avgEffective: avgEff,
+      avgActual: avgActualPlayCount(state),
+      restCompensationEnabled: !!(state.settings && state.settings.restCompensationEnabled),
+      candidateCount: splitsEvaluated,
+      comboCount: comboCandidates.length,
+      bestScore: pick.best,
+      tieCount: pick.tiers.counts[0],
+      tiers: pick.tiers,
+      draw: pick.draw,
+      chosen: chosen,
+      top: top,
+      persons: persons.map(function (p) {
+        var d = individualScoreDetail(p.member, state, avgEff, now);
+        d.member = p.member;
+        d.groupType = p.groupType;
+        d.rejected = rejectedIds.indexOf(p.member.id) !== -1;
+        return d;
+      }).sort(function (a, b) { return b.total - a.total; })
+    };
   }
 
   function collectAvailablePersons(state) {
@@ -355,6 +481,7 @@
     if (!state) return state;
     if (!state.settings) state.settings = { restCompensationEnabled: true };
     if (typeof state.settings.restCompensationEnabled !== "boolean") state.settings.restCompensationEnabled = true;
+    if (typeof state.settings.tieredRandomEnabled !== "boolean") state.settings.tieredRandomEnabled = true;
     Object.keys(state.members || {}).forEach(function (id) {
       var m = state.members[id];
       if (!m) return;
@@ -412,37 +539,21 @@
         if (!candidate || candidate.resting) return;
         if (String(candidate.name || "").trim() === "") return;
         if (candidate.onCourt !== null && candidate.onCourt !== undefined) return;
-        var score = 0;
-        var reasons = [];
+        var pBonus = 0;
+        var sPen = 0;
         if (teammate && opp1 && opp2) {
+          // 分隊固定：隊友＋候選 vs 兩位對手，與整場選人用同一套配隊分／實力分
           var four = [teammate, candidate, opp1, opp2];
-          var genderKnown = four.every(function (p) { return p.gender === "M" || p.gender === "F"; });
-          var gBonus = 0;
-          if (genderKnown) {
-            if (four.every(function (p) { return p.gender === "F"; })) gBonus = SCORE.ALL_FEMALE_BONUS;
-            else {
-              var mC = four.filter(function (p) { return p.gender === "M"; }).length;
-              var fC = four.filter(function (p) { return p.gender === "F"; }).length;
-              if (mC === 2 && fC === 2) {
-                var split = [[0, 1], [2, 3]]; // approximate original seats: teammate+candidate vs opps? 
-                // Use actual: teamA = seats 0,1 (teammate,candidate) teamB = opp1,opp2
-                var teamMixed = (teammate.gender !== candidate.gender) && (opp1.gender !== opp2.gender);
-                if (teamMixed) gBonus = SCORE.MIXED_DOUBLE_BONUS;
-              }
-            }
-          }
-          var sPen = 0;
-          var skillKnown = four.every(function (p) { return p.skill === 1 || p.skill === 2 || p.skill === 3; });
-          if (skillKnown) {
-            var diff = Math.abs((teammate.skill + candidate.skill) - (opp1.skill + opp2.skill));
-            if (diff === 2) sPen = SCORE.SKILL_DIFF_2;
-            else if (diff >= 3) sPen = SCORE.SKILL_DIFF_3_OR_MORE;
-          }
-          score = gBonus + sPen;
+          var split = [[0, 1], [2, 3]];
+          pBonus = pairingBonusForSplit(four, split);
+          sPen = skillPenaltyForSplit(four, split);
         }
-        var ind = individualScore(candidate, state, avgEffectivePlayCount(state), nowMs());
+        var score = pBonus + sPen;
+        var detail = individualScoreDetail(candidate, state, avgEffectivePlayCount(state), nowMs());
+        var ind = detail.total;
         var total = ind + score;
-        list.push({ member: candidate, group: g, individual: ind, pairing: score, total: total });
+        list.push({ member: candidate, group: g, individual: ind, pairing: score, total: total,
+          detail: detail, pairingBonus: pBonus, skillPenalty: sPen });
       });
     });
     // sort total desc, tie by name
@@ -453,13 +564,43 @@
     return list;
   }
 
-  // 自動補單一空位（刪除人員、匯入後）：與「系統換人」相同的排序取第一名，
-  // 但排除固定雙人組成員，因為只補一個位置會把固定組拆開。
-  function pickFillCandidate(state, court, seatIndex) {
+  // 單一位置選人（「系統換人」、部分空位補位）：用與整場選人相同的配隊演算法評分。
+  //  換入後四人總分 = 另外三位的個人分 + 候選的個人分 + 配隊分 + 實力分
+  //  （另外三位與分隊固定不動，只換這個位置；有空位時配隊分、實力分為 0）。
+  //  與整場選人一樣分層隨機（pickTiered）：換入後總分 x、x−1、x−2 的候選依 10:3:1 加權，並套用防稀釋上限。
+  //  排除固定雙人組成員：只換一個位置無法讓固定組兩人一起上場。
+  // 回傳 { member, chosen, candidates（依換入後總分排序，含 lineupTotal、tier、probability）, bestScore, tieCount, tiers, draw, othersIndividual }；
+  // 沒有人選時回傳 null。
+  function pickSeatCandidate(state, court, seatIndex, rng) {
+    if (typeof rng !== "function") rng = Math.random;
+    var now = nowMs();
+    var avgEff = avgEffectivePlayCount(state);
+    var othersIndividual = 0;
+    (state.courts[court] || []).forEach(function (seat, i) {
+      if (i === seatIndex || !seat) return;
+      var m = state.members[seat.memberId];
+      if (m) othersIndividual += individualScore(m, state, avgEff, now);
+    });
     var list = scoredManualCandidates(state, court, seatIndex).filter(function (c) {
       return c.group.type !== "fixed";
     });
-    return list.length ? list[0].member : null;
+    if (!list.length) return null;
+    list.forEach(function (c) { c.lineupTotal = othersIndividual + c.total; });
+    list.sort(function (a, b) {
+      if (b.lineupTotal !== a.lineupTotal) return b.lineupTotal - a.lineupTotal;
+      return a.member.name.localeCompare(b.member.name, "zh-Hant");
+    });
+    var pick = pickTiered(list, function (c) { return c.lineupTotal; }, rng, tieredRandomEnabled(state));
+    return {
+      member: pick.chosen.member, chosen: pick.chosen, candidates: list, bestScore: pick.best,
+      tieCount: pick.tiers.counts[0], tiers: pick.tiers, draw: pick.draw, othersIndividual: othersIndividual
+    };
+  }
+
+  // 自動補單一空位（刪除人員、匯入後）：與「系統換人」相同，見 pickSeatCandidate。
+  function pickFillCandidate(state, court, seatIndex, rng) {
+    var pick = pickSeatCandidate(state, court, seatIndex, rng);
+    return pick ? pick.member : null;
   }
 
   var api = {
@@ -469,8 +610,10 @@
     effectivePlayCount: effectivePlayCount,
     avgEffectivePlayCount: avgEffectivePlayCount,
     individualScore: individualScore,
+    individualScoreDetail: individualScoreDetail,
+    DEBUG_TOP_N: DEBUG_TOP_N,
     PAIRINGS: PAIRINGS,
-    genderBonusForSplit: genderBonusForSplit,
+    pairingBonusForSplit: pairingBonusForSplit,
     skillPenaltyForSplit: skillPenaltyForSplit,
     pairingScoreForSplit: pairingScoreForSplit,
     allSplitsForFour: allSplitsForFour,
@@ -478,6 +621,11 @@
     combinationsIndices: combinationsIndices,
     pickBestCourtCombo: pickBestCourtCombo,
     scoredManualCandidates: scoredManualCandidates,
+    pickSeatCandidate: pickSeatCandidate,
+    tierOfScore: tierOfScore,
+    tierShares: tierShares,
+    pickTiered: pickTiered,
+    tieredRandomEnabled: tieredRandomEnabled,
     pickFillCandidate: pickFillCandidate,
     toggleResting: toggleResting,
     setResting: setResting,

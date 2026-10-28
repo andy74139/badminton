@@ -79,6 +79,8 @@
     if (!state) return state;
     if (!state.settings) state.settings = { restCompensationEnabled: true };
     if (typeof state.settings.restCompensationEnabled !== "boolean") state.settings.restCompensationEnabled = true;
+    // 分層隨機（x、x−1、x−2 依權重抽）；關閉時只在最高分中隨機。預設開啟。
+    if (typeof state.settings.tieredRandomEnabled !== "boolean") state.settings.tieredRandomEnabled = true;
     if (!state.profiles || typeof state.profiles !== "object") state.profiles = {};
     if (!state.pending) state.pending = { A: false, B: false, C: false };
     if (!state.courts) state.courts = { A: [null, null, null, null], B: [null, null, null, null], C: [null, null, null, null] };
@@ -127,7 +129,7 @@
       pending: { A: false, B: false, C: false },
       courtCount: 3,
       started: false,
-      settings: { restCompensationEnabled: true },
+      settings: { restCompensationEnabled: true, tieredRandomEnabled: true },
       profiles: {}
     });
   }
@@ -506,7 +508,7 @@
       var newState = createDefaultState();
       newState.profiles = profiles;
       newState.courtCount = state.courtCount;
-      newState.settings = { restCompensationEnabled: state.settings.restCompensationEnabled };
+      newState.settings = Object.assign({}, state.settings); // 開始新場次保留所有設定
       // ids continue
       newState.nextGroupId = state.nextGroupId;
       newState.nextMemberId = state.nextMemberId;

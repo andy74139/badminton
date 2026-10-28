@@ -9,10 +9,10 @@
   ALG-02 候選資格          → Roster.availableGroups、Pairing.collectAvailablePersons
   ALG-03 合法組合          → Pairing.pickBestCourtCombo（組合列舉與固定組檢查）
   ALG-04 場數名詞          → effectivePlayCount、avgEffectivePlayCount、avgActualPlayCount
-  ALG-05 加減分            → individualScore、genderBonusForSplit、skillPenaltyForSplit、SCORE
-  ALG-06 選擇與同分        → Pairing.pickBestCourtCombo
+  ALG-05 加減分            → individualScore、pairingBonusForSplit、skillPenaltyForSplit、SCORE
+  ALG-06 分層隨機          → Pairing.tierOfScore、Pairing.tierShares、Pairing.pickTiered（由 pickBestCourtCombo、pickSeatCandidate 呼叫）
   ALG-07 補位              → index.html proposeCourt / regenerateCourt 的 fallback
-  ALG-08 單一位置選人      → Pairing.scoredManualCandidates、Pairing.pickFillCandidate
+  ALG-08 單一位置選人      → Pairing.scoredManualCandidates、Pairing.pickSeatCandidate（pickFillCandidate 為其包裝）
   ALG-09 不打場數          → activeRestCredit、setResting、setRestCompensationEnabled、adjustRestCredit、Roster.addGroup 等
   ALG-10 計算範例          → 可用 node 直接呼叫上述函式驗證
 
@@ -22,7 +22,7 @@
 
 - index.html：介面、事件掛接、DOM render，以及狀態協調：load/save、startAll、proposeCourt、regenerateCourt、confirmCourt、完賽、resetCounts、setCourtCount、刪除成員後補位、連結/分開雙人組、匯入對話框。
 - roster.js：預設名單 DEFAULT_GROUPS、ensureStateFields、createDefaultState、availableGroups、姓名正規化、人員設定檔、貼上名單解析 parsePaste、applyImport、normalizeSeats、addGroup/addMemberToGroup/removeMember、migrateV1/migrateV2。
-- pairing.js：SCORE 常數、平均值與有效場數、個人分數、性別/實力分數、可用人員收集、組合列舉、pickBestCourtCombo、scoredManualCandidates、pickFillCandidate、setResting/toggleResting、setRestCompensationEnabled、displayStats。純函數為主，不操作 DOM 或 localStorage。pairing.js 透過 global.Roster.availableGroups 取得可用組別（執行時才呼叫，避免載入順序相依）。
+- pairing.js：SCORE 常數、平均值與有效場數、個人分數、性別/實力分數、可用人員收集、組合列舉、pickBestCourtCombo、scoredManualCandidates、pickSeatCandidate、pickFillCandidate、setResting/toggleResting、setRestCompensationEnabled、displayStats。純函數為主，不操作 DOM 或 localStorage。pairing.js 透過 global.Roster.availableGroups 取得可用組別（執行時才呼叫，避免載入順序相依）。
 
 註：index.html 仍留有未使用的舊版函式（見 K-08），修改時以 Roster/Pairing 模組為準。
 
@@ -56,7 +56,8 @@ state = {
   pendingRejectedMemberIds: [memberId, ...],          // 「再換另一批」暫時扣分名單（全場地共用）
   courtCount: 1 | 2 | 3,
   started: boolean,
-  settings: { restCompensationEnabled: boolean },     // 預設 true
+  settings: { restCompensationEnabled: boolean,       // 預設 true
+              tieredRandomEnabled: boolean },         // 分層隨機，預設 true；false 時只在最高分中隨機
   profiles: { [normalizedName]: { name, gender, skill } }
 }
 
@@ -103,7 +104,7 @@ ensureStateFields 對缺少 type 的組別補 "single"；migrateV2 補 "rotate"�
 3. 預覽 UI（輸入即時更新）：錯誤（紅字）、警告、「解析出 N 組・M 人」、每人一列姓名＋下拉選單（"__none__" 不套用舊設定 + 全部 profiles，顯示姓名（性別／實力）），預設值為 suggestedProfile。有錯誤時「確認匯入」停用。
 4. applyImport(state, parsed, mode, selections, now)
    selections[i]：profile key、"__none__"（不套用）或 undefined（使用 suggestedProfile）。
-   A. mode = "new"（開始新場次）
+   A. mode = "new"（開始新場次；settings 整份複製保留）
       - 依匯入名單建立新 groups/members，ID 從目前 nextGroupId / nextMemberId 接續。
       - 每人：playCount=0、restCreditTotal=0、lastFinishedAt=null、onCourt=null、resting=false、restStartAverage=null；性別/實力取自所選 profile（無則 null），並寫回該姓名 profile。
       - groupCounts 全 0；courts 清空、pending 全 false、started=false。
@@ -187,16 +188,16 @@ var SCORE = {
 
   新人起始補償：Roster.addGroup、Roster.addMemberToGroup、applyImport(update) 的新成員，在開關開啟時 restCreditTotal = Math.round(avgEffectivePlayCount(state) × 2) / 2；否則 0。
 
-3. 配隊分數
+3. 配隊分與實力分
 
   三種分隊（PAIRINGS）：[0,1] vs [2,3]、[0,2] vs [1,3]、[0,3] vs [1,2]。
-  genderBonusForSplit：
+  pairingBonusForSplit（配隊分，原 genderBonusForSplit）：
     - 任一人性別未知 → 0
-    - 四人皆 F → +2
-    - 2M+2F 且兩隊各為一男一女 → +1
+    - 四人皆 F（全女生）→ +2（ALL_FEMALE_BONUS）
+    - 2M+2F 且兩隊各為男+女（男女配隊）→ +1（MIXED_DOUBLE_BONUS）
     - 其他 → 0
   skillPenaltyForSplit：四人 skill 皆為 1/2/3 才計算；diff = |teamA 實力和 - teamB 實力和|；diff<=1 → 0；diff==2 → -2；diff>=3 → -5；否則 0。
-  pairingScore = genderBonus + skillPenalty。
+  pairingScore（分隊分數，pairingScoreForSplit）= pairingBonus + skillPenalty。
 
 4. 候選總分與選擇 pickBestCourtCombo(state, now, rng, rejectedIds)
 
@@ -206,9 +207,9 @@ var SCORE = {
       若含 fixed 組，該組兩人須在同一隊（seatMembers 前兩位為一隊、後兩位為另一隊），否則略過
       rejectedPenalty = 四人中在 rejectedIds 內的人數 × (-100)
       total = sumInd + pairingScore + rejectedPenalty
-  保留 total 最高的所有（組合＋拆分）候選；可用人數 < 4 或沒有合法候選時回傳 null。
-  同分選擇：程式對同分候選計算 exp((score - best) / 1.5) 權重後抽樣；因只有同分候選，權重皆為 1，等同均勻隨機（K-10）。
-  回傳 { persons, people, seatMembers, pairingScore, split, score }，seatMembers 依 teamA 兩位接 teamB 兩位排列，直接對應座位 1、2 vs 3、4。
+    每組四人保留 total 最高的分法為代表（rec.tiedSplits = 同分的最佳分法）；可用人數 < 4 或沒有合法候選時回傳 null。
+  pick = pickTiered(四人組合代表, rec.score, rng)；選中的組若 tiedSplits > 1，再以 rng() 均分抽一種分法（splitProbability = 1 / 數量）。
+  回傳 { persons, people, seatMembers, pairingScore, split, score, tier, probability, tiedSplits, splitProbability, debug }，seatMembers 依 teamA 兩位接 teamB 兩位排列，直接對應座位 1、2 vs 3、4。
 
 5. 補位（pickBestCourtCombo 回傳 null 時，proposeCourt / regenerateCourt）
 
@@ -230,7 +231,7 @@ var SCORE = {
 - refillEmptySeatsIfStarted()（未開始時不做事），對每個開放場地：
     四位皆滿 → 略過；
     全空 → proposeCourt（產生待確認名單，pending=true）；
-    部分空位 → 對每個空位 Pairing.pickFillCandidate(state, court, idx) 取人，assignSeat(…, commit = !pending[court])；找不到人則保留空位。
+    部分空位 → 對每個空位 Pairing.pickSeatCandidate(state, court, idx) 取人並 logSeatPick，assignSeat(…, commit = !pending[court])；找不到人則保留空位。
   呼叫時機：刪除成員/組別、姓名清空、applyImport 成功後。
 - 每個操作結束後 save() 並 render()。
 
@@ -238,11 +239,17 @@ var SCORE = {
 
 - 隊友 = 同隊另一座位（0↔1、2↔3），對手 = 另一隊兩座位；分隊不重排。
 - 候選：可用組別中（排除被換下者所屬組別）姓名非空白、未臨時不打、不在場上的每位成員（rotate 組兩人都列入）。未處理 fixed 組限制（K-04）。
-- pairing：隊友與兩位對手都有人時，以「隊友＋候選 vs 對手兩人」計算性別加分與實力扣分；否則 0。
+- pairing：隊友與兩位對手都有人時，以「隊友＋候選 vs 對手兩人」以 pairingBonusForSplit／skillPenaltyForSplit（split [[0,1],[2,3]]）計算配隊分與實力分，與整場選人共用；否則 0。
 - individual：individualScore(候選, state, avgEffectivePlayCount, now)。
 - total = individual + pairing；依 total 由高到低，同分依姓名 localeCompare("zh-Hant")。
-- pickFillCandidate(state, court, seatIndex)：自動補位用，取 scoredManualCandidates 中排除 fixed 組成員後的第一名；沒有則回傳 null。
-- UI：面板頂端「系統換人」直接採用第一名；接著目前人選（標「目前」）；其餘候選顯示性別、實力、「已上 N 次」，pairing > 0 時顯示「★男女配對」（K-05）。
+- pickSeatCandidate(state, court, seatIndex, rng)：系統換人與自動補位用。
+    othersIndividual = 該場其他已入座者的 individualScore 合計（同一個 avgEff、now）；
+    候選 = scoredManualCandidates 排除 fixed 組成員，每筆加 lineupTotal = othersIndividual + total、probability；
+    依 lineupTotal 由高到低（同分依姓名）排序；pickTiered(候選, lineupTotal, rng) 分層抽一人，每筆寫入 tier、probability。
+    回傳 { member, chosen, candidates, bestScore, tieCount, tiers, draw, othersIndividual }；沒有候選回傳 null。
+- pickFillCandidate(state, court, seatIndex, rng)：回傳 pickSeatCandidate 的 member（相容舊呼叫）。
+- 「系統換人」按鈕：scoredManualCandidates 中有非 fixed 組候選時才顯示；點擊時呼叫 pickSeatCandidate（每次重新隨機）。
+- UI：面板頂端「系統換人」直接採用第一名；接著目前人選（標「目前」）；其餘候選顯示性別、實力、「已上 N 次」，pairingBonus = ALL_FEMALE_BONUS 時顯示「★全女生」、= MIXED_DOUBLE_BONUS 時顯示「★男女配對」，其他不顯示。
 
 八、統計和本機儲存
 
@@ -300,10 +307,10 @@ var SCORE = {
 
 九、測試（tests/run.js，`node tests/run.js`）
 
-目前 33 項，全部通過：
+目前 43 項，全部通過：
 1. 個人分數邊界（平均 3，count 1.9 / 2 / 2.49 / 2.5 / 3.5 / 3.6 / 4 / 4.01）。
 2. 近期下場 119,999 ms 扣分、120,000 ms 不扣。
-3. 性別加分：FFFF、2M2F 混雙、2M2F 非混雙、性別未知。
+3. 配隊分：全女生、2M2F 男女配隊、2M2F 非男女配隊、性別未知。
 4. 實力扣分：diff 0/1/2/3/4 與缺資料。
 5. 不打場數門檻：基準 1.0 時平均 1.49 / 1.5 / 1.99 / 2.0；基準 0.6 取 1。
 6. restCreditTotal 不影響 avgActualPlayCount。
@@ -334,10 +341,41 @@ var SCORE = {
 31. deleteProfile 刪除過去名單設定檔；目前名單中的人或不存在的 key 回傳 false。
 32. setPairType 雙人組 ⇄ 雙人輪流，兩人都在場上也可切換且座位不變；單人組與未知類型拒絕。
 33. linkMembers／splitPair 不改場上座位；場上成員的同組搭檔暫不可被安排，下場後才可；不合法的連結回傳 false。
+34. pickBestCourtCombo 的 debug：前幾名依總分排序、總分 = 各細項相加、同分機率合計 1、個人細項與 individualScore 一致、剛下場與暫時扣分有標記。
+35. 場數相同時：4 位女生可上場 → 選出全女生（+2）；只有 2 位女生 → 選出男+女 vs 男+女（+1）。
+36. 單一位置候選與整場選人使用同一配隊分：形成全女生 +2、形成男女配隊 +1，其他 0。
+37. pickSeatCandidate：換入後總分 = 另外三位個人分 + 候選個人分 + 配隊分 + 實力分；分層隨機（x 層至少 2/3，較低層也可能被抽到）；排除固定組成員。
+38. tierShares：ALG-06 五個範例與 x−1 為空、只有 x 層的情況。
+39. tierShares 大量組合下：機率加總 1、x 層 ≥ 2/3、x−2 ≤ 下兩層 1/4、每組機率隨層遞減。
+40. pickTiered：依隨機數選層與層內位置；x−3 以下不抽、機率 0。
+41. 整場選人每組四人只出現一次，且使用其最佳分法。
+42. 分層隨機開關關閉時只抽最高分（pickTiered 與整場選人），開啟時較低層可被抽到；預設開啟。
+43. 「開始新場次」匯入保留 tieredRandomEnabled 等所有設定。
+
+測試名單：tests/run.js 以 fixtureState() 匯入固定的 16 組 20 人名單（含 4 組雙人輪流），不依賴 roster.js 的 DEFAULT_GROUPS，修改預設名單不影響測試。
 
 refillEmptySeatsIfStarted 位於 index.html，無單元測試；已於瀏覽器手動驗證：待確認名單刪人補位不計次、進行中場地補位 +1、更新匯入後座位保留並補位。
 
 建議補測：固定雙人組（同時上場、同隊、一人休息整組不可用）、新人起始補償、再換另一批（暫時扣分與清除時機）、平均值排除臨時不打者、手動換人與固定組（K-04）。
+
+九之一、配隊 log（規則見 requirements ALG-11）
+- Pairing.individualScoreDetail(member, state, avgEff, now) → { effective, diff, fairness, recent, sinceFinishMs, total }；individualScore 回傳其 total。
+- 分層隨機（pairing.js）：
+    tierOfScore(score, best)：diff = best − score；diff ≤ 0 → 0、≤ 1 → 1、≤ 2 → 2，否則 −1（層數 = RANDOM_TIER_WEIGHTS.length）。
+    tierShares(counts)：W_k = counts[k] × RANDOM_TIER_WEIGHTS[k]；counts[1] > 0 且 W2 > W1 × q/(1−q)（q = 1/4）時 W2 = W1 × q/(1−q)；
+      W1 + W2 > W0 × p/(1−p)（p = 1/3）時 W1、W2 等比例縮小；回傳 { counts, shares, perCandidate, capLowest, capLower }。
+    pickTiered(items, scoreOf, rng, enabled)：enabled === false 時只把第 0 層計入 tierShares（x−1、x−2 機率 0，tier 仍標示），回傳的 tiers 加 enabled、layerSizes；
+      tieredRandomEnabled(state) 讀取 settings.tieredRandomEnabled（缺省為 true），pickBestCourtCombo 與 pickSeatCandidate 都傳入。
+      寫入每個 item 的 tier、probability；draw = rng()，依累積 shares 選層，(draw − 前面累積) / 該層 share 換算層內索引；
+      回傳 { chosen, best, tiers, draw }。
+- pickBestCourtCombo 每個候選記錄 individualSum、pairingBonus（配隊分）、skillPenalty、rejectedPenalty、tier、probability。
+  回傳的候選帶 debug：{ avgEffective, avgActual, restCompensationEnabled, candidateCount（可行分法數）, comboCount（四人組合數）, bestScore, tieCount（x 層組數）, tiers, draw, chosen,
+  top（依總分排序前 Pairing.DEBUG_TOP_N = 30 名，選中者不在其中時附在最後）, persons（可用球友 individualScoreDetail，加 member、groupType、rejected，依個人分排序） }。
+- scoredManualCandidates 的每筆加上 detail（individualScoreDetail）、pairingBonus、skillPenalty。
+- index.html：PAIRING_LOG（預設 true）。logCourtPick(court, reason, best) 於 proposeCourt（reason 由呼叫者傳入）與 regenerateCourt 後呼叫；
+  logSeatPick(court, seatIndex, reason, pick)（pick 為 pickSeatCandidate 的結果）於「系統換人」與 refillEmptySeatsIfStarted 的單一位置補位時呼叫；pick 為 null 時以 console.info 說明沒有人選。
+  兩者都用 console.groupCollapsed + console.table；best 為 null 時 logCourtPick 以 console.info 印補位說明。
+- regenerateCourt 改傳 Math.random 函式（原本誤傳 Math.random() 數值，pickBestCourtCombo 會自動退回 Math.random，行為不變）。
 
 十、實作約束
 

@@ -663,6 +663,9 @@
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
         <input type="checkbox" id="restCompToggle"> 臨時不打場數 (臨時不打的人不補他這段時間沒打到的場數)
       </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:6px;">
+        <input type="checkbox" id="tieredRandomToggle"> 分層隨機 (最高分 x、x−1、x−2 的隊伍依 10:3:1 抽；關閉時只在最高分中隨機)
+      </label>
     </div>
     <div class="roster-list" id="rosterList"></div>
     <div class="roster-add">
@@ -844,6 +847,7 @@
     if(!Array.isArray(st.pendingRejectedMemberIds)) st.pendingRejectedMemberIds = [];
     if(!st.settings) st.settings = { restCompensationEnabled: true };
     if(typeof st.settings.restCompensationEnabled !== "boolean") st.settings.restCompensationEnabled = true;
+    if(typeof st.settings.tieredRandomEnabled !== "boolean") st.settings.tieredRandomEnabled = true;
     if(!st.profiles || typeof st.profiles !== "object") st.profiles = {};
     if(typeof st.schemaVersion !== "number") st.schemaVersion = 3;
     Roster.ensureProfiles(st);
@@ -1112,9 +1116,117 @@
     return order;
   }
 
-  function proposeCourt(court){
+  // ---- 配隊 log（瀏覽器開發者工具 Console）----
+  // 每次選人都印出候選與各細項分數，方便了解演算法與除錯；設成 false 即可關閉。
+  var PAIRING_LOG = true;
+
+  function fmtNum(n){ return (Math.round(n * 100) / 100).toString(); }
+  function fmtScore(n){ return n > 0 ? "+" + n : String(n); }
+  function fmtPct(p){
+    if(!p) return "—";
+    var pct = p * 100;
+    // 同分很多時單一候選機率很小，保留兩位有效數字避免顯示成 0%
+    return (pct >= 1 ? Math.round(pct * 10) / 10 : Number(pct.toPrecision(2))) + "%";
+  }
+  function recentText(d){
+    return d.recent ? fmtScore(d.recent) + "（" + Math.round(d.sinceFinishMs / 1000) + " 秒前下場）" : "0";
+  }
+  function teamText(members, detailById){
+    return members.map(function(m){ return m.name + "(" + fmtScore(detailById[m.id] ? detailById[m.id].total : 0) + ")"; }).join("、");
+  }
+
+  // 分層隨機的層名稱與摘要（x = 最高分）
+  function tierLabel(k){ return k === 0 ? "x" : (k > 0 ? "x−" + k : "—（不抽）"); }
+  function tierSummary(tiers, best, unit, draw){
+    if(tiers.enabled === false){
+      var sizes = tiers.layerSizes || tiers.counts;
+      return "分層隨機：關閉（設定）｜只在最高分 x=" + best + " 的 " + sizes[0] + " " + unit + "中均分隨機（每" + unit + " " + fmtPct(tiers.perCandidate[0]) + "）" +
+        "｜另有 x−1 " + (sizes[1] || 0) + " " + unit + "、x−2 " + (sizes[2] || 0) + " " + unit + "不抽｜隨機數 " + fmtNum(draw);
+    }
+    var parts = tiers.counts.map(function(n, k){
+      var score = best - k;
+      return tierLabel(k) + "=" + score + "：" + n + " " + unit + (n ? " → 共 " + fmtPct(tiers.shares[k]) + "（每" + unit + " " + fmtPct(tiers.perCandidate[k]) + "）" : "");
+    });
+    var caps = [];
+    if(tiers.capLowest) caps.push("x−2 層最多佔下兩層 1/4");
+    if(tiers.capLower) caps.push("下兩層合計最多 1/3");
+    return "分層隨機（每" + unit + "權重 " + Pairing.SCORE.RANDOM_TIER_WEIGHTS.join(":") + "）｜" + parts.join("｜") +
+      "｜防稀釋上限：" + (caps.length ? caps.join("、") : "未觸發") + "｜隨機數 " + fmtNum(draw);
+  }
+
+  // 整場選四人（開始、完賽、再換另一批、增加場地、整場補位）
+  function logCourtPick(court, reason, best){
+    if(!PAIRING_LOG || typeof console === "undefined") return;
+    if(!best){
+      var persons = Pairing.collectAvailablePersons(state);
+      console.info("[配隊] " + court + " 場｜" + reason + "｜找不到合法的四人組合，改用補位（不計分，依名單順序）。可用 " + persons.length + " 人：" +
+        persons.map(function(p){ return p.member.name; }).join("、"));
+      return;
+    }
+    var d = best.debug;
+    var detailById = {};
+    d.persons.forEach(function(p){ detailById[p.member.id] = p; });
+    var s = best.seatMembers;
+    console.groupCollapsed("[配隊] " + court + " 場｜" + reason + "｜選出 " + s[0].name + "、" + s[1].name + " vs " + s[2].name + "、" + s[3].name +
+      "｜總分 " + best.score + "（" + tierLabel(best.tier) + " 層）｜機率 " + fmtPct(best.probability) + "（最高分 " + d.bestScore + "，同分 " + d.tieCount + " 組）");
+    console.log(tierSummary(d.tiers, d.bestScore, "組", d.draw) +
+      (best.tiedSplits && best.tiedSplits.length > 1 ? "｜這組四人有 " + best.tiedSplits.length + " 種同分分法，再均分抽一種" : ""));
+    console.log("評估 " + d.comboCount + " 組四人（共 " + d.candidateCount + " 種可行分法，每組四人取最高分的分法參加抽籤）；平均有效場數 " + fmtNum(d.avgEffective) +
+      "、平均實際上場 " + fmtNum(d.avgActual) + "；臨時不打場數 " + (d.restCompensationEnabled ? "開啟" : "關閉"));
+    console.log("總分 = 四人個人分總和 + 配隊分 + 實力分 + 暫時扣分。配隊分：全女生 " + fmtScore(Pairing.SCORE.ALL_FEMALE_BONUS) +
+      "、男女配隊（男+女 vs 男+女）" + fmtScore(Pairing.SCORE.MIXED_DOUBLE_BONUS) + "，性別未設定不加分。下表為總分前 " +
+      Pairing.DEBUG_TOP_N + " 名" + (d.top.indexOf(best) >= Pairing.DEBUG_TOP_N ? "（另附選中者）" : "") + "：");
+    console.table(d.top.map(function(c, i){
+      var t1 = c.seatMembers.slice(0, 2), t2 = c.seatMembers.slice(2, 4);
+      return {
+        "排名": i + 1, "隊伍一": teamText(t1, detailById), "隊伍二": teamText(t2, detailById),
+        "個人分合計": c.individualSum, "配隊分": c.pairingBonus, "實力分": c.skillPenalty, "暫時扣分": c.rejectedPenalty,
+        "總分": c.score, "層": tierLabel(c.tier), "機率": fmtPct(c.probability), "選中": c === best ? "★" : ""
+      };
+    }));
+    console.log("可用球友的個人分數（公平分：有效場數比平均低 1 以上 +4、低 0.5 以上 +2、高 0.5 以上 −2、高 1 以上 −4；剛下場未滿 120 秒 −3）：");
+    console.table(d.persons.map(function(p){
+      var m = p.member;
+      return {
+        "姓名": m.name, "類型": p.groupType === "fixed" ? "雙人組" : (p.groupType === "rotate" && groupById(m.groupId).memberIds.length > 1 ? "雙人輪流" : "單人"),
+        "性別": m.gender === "M" ? "男" : (m.gender === "F" ? "女" : "未設"), "實力": m.skill ? SKILL_LABELS[m.skill] : "未設",
+        "實際上場": m.playCount || 0, "有效場數": fmtNum(p.effective), "與平均差": fmtScore(Math.round(p.diff * 100) / 100),
+        "公平分": p.fairness, "剛下場": recentText(p), "暫時扣分名單": p.rejected ? "是（每人 " + Pairing.SCORE.REJECTED_PERSON_PENALTY + "）" : "",
+        "個人分": p.total
+      };
+    }));
+    console.groupEnd();
+  }
+
+  // 單一位置選人（系統換人、部分空位補位）：pick 為 Pairing.pickSeatCandidate 的結果（null 表示沒有人選）
+  function logSeatPick(court, seatIndex, reason, pick){
+    if(!PAIRING_LOG || typeof console === "undefined") return;
+    if(!pick){
+      console.info("[配隊] " + court + " 場 位置 " + (seatIndex + 1) + "｜" + reason + "｜沒有可用人選（固定雙人組成員不會被單獨換入）");
+      return;
+    }
+    console.groupCollapsed("[配隊] " + court + " 場 位置 " + (seatIndex + 1) + "｜" + reason + "｜選出 " + pick.member.name +
+      "｜換入後總分 " + pick.chosen.lineupTotal + "（" + tierLabel(pick.chosen.tier) + " 層）｜機率 " + fmtPct(pick.chosen.probability) +
+      "（最高分 " + pick.bestScore + "，同分 " + pick.tieCount + " 人，候選 " + pick.candidates.length + " 人）");
+    console.log(tierSummary(pick.tiers, pick.bestScore, "人", pick.draw));
+    console.log("換入後總分 = 另外三位個人分（" + fmtScore(pick.othersIndividual) + "）+ 候選個人分 + 配隊分 + 實力分。另外三位與分隊不動；有空位時配隊分、實力分為 0。" +
+      "固定雙人組成員不列入。");
+    console.table(pick.candidates.map(function(c, i){
+      var m = c.member, d = c.detail;
+      return {
+        "排名": i + 1, "姓名": m.name, "實際上場": m.playCount || 0, "有效場數": fmtNum(d.effective), "與平均差": fmtScore(Math.round(d.diff * 100) / 100),
+        "公平分": d.fairness, "剛下場": recentText(d), "個人分": c.individual,
+        "配隊分": c.pairingBonus, "實力分": c.skillPenalty, "換入後總分": c.lineupTotal, "層": tierLabel(c.tier), "機率": fmtPct(c.probability),
+        "選中": c === pick.chosen ? "★" : ""
+      };
+    }));
+    console.groupEnd();
+  }
+
+  function proposeCourt(court, reason){
     // 先釋出此場地原有四個席位（其他場地保持占用）；availableGroups 會自動排除其他場地的人。
     var best = Pairing.pickBestCourtCombo(state, Date.now());
+    logCourtPick(court, reason || "產生建議名單", best);
 if(!best){
       // 可用不同組不足 4 組時，盡量補合法人選，不重複同組或同一人。
       var persons = Pairing.collectAvailablePersons(state);
@@ -1171,7 +1283,8 @@ if(!best){
       }
     });
     freeCourt(court);
-    var best = Pairing.pickBestCourtCombo(state, Date.now(), Math.random(), state.pendingRejectedMemberIds.slice());
+    var best = Pairing.pickBestCourtCombo(state, Date.now(), Math.random, state.pendingRejectedMemberIds.slice());
+    logCourtPick(court, "再換另一批", best);
 if(!best){
       var persons = Pairing.collectAvailablePersons(state);
       var usedGroups = {};
@@ -1244,7 +1357,7 @@ if(!best){
 
   function refillCourt(court){
     freeCourt(court);
-    proposeCourt(court);
+    proposeCourt(court, "完賽，換下一組");
   }
 
   // Builds the ranked candidate list for one seat's dropdown: everyone
@@ -1304,7 +1417,7 @@ if(!best){
 
   function startAll(){
     state.pendingRejectedMemberIds = [];
-    activeCourts().forEach(function(c){ proposeCourt(c); });
+    activeCourts().forEach(function(c){ proposeCourt(c, "開始"); });
     state.started = true;
   }
 
@@ -1316,7 +1429,7 @@ if(!best){
     var after = activeCourts();
     before.forEach(function(c){ if(after.indexOf(c) === -1) freeCourt(c); });
     if(state.started){
-      after.forEach(function(c){ if(before.indexOf(c) === -1) proposeCourt(c); });
+      after.forEach(function(c){ if(before.indexOf(c) === -1) proposeCourt(c, "增加場地"); });
     }
     save();
     render();
@@ -1350,12 +1463,13 @@ if(!best){
     activeCourts().forEach(function(c){
       var filled = state.courts[c].filter(Boolean).length;
       if(filled === 4) return;
-      if(filled === 0){ proposeCourt(c); return; }
+      if(filled === 0){ proposeCourt(c, "自動補位（整場空了）"); return; }
       var commit = !state.pending[c];
       for(var idx=0; idx<4; idx++){
         if(state.courts[c][idx]) continue;
-        var member = Pairing.pickFillCandidate(state, c, idx);
-        if(member) assignSeat(c, idx, member, commit);
+        var pick = Pairing.pickSeatCandidate(state, c, idx);
+        logSeatPick(c, idx, "自動補位", pick);
+        if(pick) assignSeat(c, idx, pick.member, commit);
       }
     });
   }
@@ -1489,7 +1603,7 @@ if(!best){
       } else if(tier === 0 || tier === 1){
         var star = document.createElement("span");
         star.className = "po-star";
-        star.textContent = tier === 0 ? "★女生對女生" : "★男女配對";
+        star.textContent = tier === 0 ? "★全女生" : "★男女配對";
         bottom.appendChild(star);
       }
       opt.appendChild(bottom);
@@ -1511,16 +1625,20 @@ if(!best){
       if(curM) list.appendChild(makeOption(curM, true, null));
     }
     var scoredManual = Pairing.scoredManualCandidates(state, court, seatIndex);
-    if(scoredManual.length){
+    // 系統換人：可被單獨換入的人（排除固定雙人組成員）才顯示
+    if(scoredManual.some(function(c){ return c.group.type !== "fixed"; })){
       var autoBtn = document.createElement("button");
       autoBtn.type = "button";
       autoBtn.className = "picker-option";
       autoBtn.style.fontWeight = "700";
       autoBtn.textContent = "系統換人";
-      autoBtn.title = "由系統選擇下一位適合的球友";
+      autoBtn.title = "由系統選擇：依換入後四人總分分層隨機（最高分 x、x−1、x−2 依 10:3:1 加權）";
       autoBtn.addEventListener("click", function(e){
         e.stopPropagation();
-        assignSeat(court, seatIndex, scoredManual[0].member, !pending);
+        var pick = Pairing.pickSeatCandidate(state, court, seatIndex);
+        logSeatPick(court, seatIndex, "系統換人", pick);
+        if(!pick) return;
+        assignSeat(court, seatIndex, pick.member, !pending);
         activeSeatPicker = null;
         save();
         render();
@@ -1528,7 +1646,9 @@ if(!best){
       list.insertBefore(autoBtn, list.firstChild);
     }
     scoredManual.forEach(function(c){
-      list.appendChild(makeOption(c.member, false, (c.pairing > 0 ? 1 : 2)));
+      // 星號依配隊分：全女生 tier 0、男女配隊 tier 1，其他不顯示
+      var tier = c.pairingBonus === Pairing.SCORE.ALL_FEMALE_BONUS ? 0 : (c.pairingBonus === Pairing.SCORE.MIXED_DOUBLE_BONUS ? 1 : 2);
+      list.appendChild(makeOption(c.member, false, tier));
     });
 
     wrap.appendChild(list);
@@ -2374,6 +2494,8 @@ if(!best){
     renderRosterList();
     var toggle = document.getElementById("restCompToggle");
     if(toggle) toggle.checked = !!(state.settings && state.settings.restCompensationEnabled);
+    var tieredToggle = document.getElementById("tieredRandomToggle");
+    if(tieredToggle) tieredToggle.checked = Pairing.tieredRandomEnabled(state);
     rosterOverlay.hidden = false;
   }
   function closeRoster(){
@@ -2384,6 +2506,15 @@ if(!best){
   document.getElementById("rosterBtn").addEventListener("click", openRoster);
   document.getElementById("rosterDone").addEventListener("click", closeRoster);
   rosterOverlay.addEventListener("click", function(e){ if(e.target === rosterOverlay) closeRoster(); });
+
+  var tieredRandomToggle = document.getElementById("tieredRandomToggle");
+  if(tieredRandomToggle){
+    // 只影響之後的選人；已排好的名單不重排
+    tieredRandomToggle.addEventListener("change", function(){
+      state.settings.tieredRandomEnabled = tieredRandomToggle.checked;
+      save();
+    });
+  }
 
   var restCompToggle = document.getElementById("restCompToggle");
   if(restCompToggle){
